@@ -1,0 +1,147 @@
+import { test, expect, type Page } from '@playwright/test';
+import type { Snapshot, Draft } from '../../src/bridge';
+
+declare global {
+  interface Window { relayTest: { state: Snapshot; push: (state: Partial<Snapshot>) => void; calls: string[]; draft?: Draft } }
+}
+
+async function openApp(page: Page) {
+  await page.addInitScript(() => {
+    const callbacks = new Map<number, (event: unknown) => void>();
+    const listeners = new Map<number, string>();
+    let next = 1;
+    let pinned = false;
+    const state: Snapshot = { sequence: 1, phase: 'idle', sent: 0, total: 0, remainingSeconds: 0, message: '', settings: { delaySeconds: 5, intervalMs: 50, shortcut: 'F8' }, shortcutError: null };
+    window.relayTest = { state, calls: [], push: patch => {
+      Object.assign(state, patch, { sequence: state.sequence + 1 });
+      for (const [id, event] of listeners) if (event === 'relay-state') callbacks.get(id)?.({ event, id, payload: structuredClone(state) });
+    } };
+    Object.assign(window, {
+      __TAURI_INTERNALS__: {
+        metadata: { currentWindow: { label: 'main' }, currentWebview: { label: 'main', windowLabel: 'main' } },
+        transformCallback: (callback: (event: unknown) => void) => { const id = next++; callbacks.set(id, callback); return id; },
+        unregisterCallback: (id: number) => callbacks.delete(id),
+        invoke: async (command: string, args: Record<string, unknown>) => {
+          window.relayTest.calls.push(command);
+          if (command === 'plugin:event|listen') { listeners.set(args.handler as number, args.event as string); return args.handler; }
+          if (command === 'plugin:event|unlisten') { listeners.delete(args.eventId as number); return; }
+          if (command === 'plugin:window|is_always_on_top') return pinned;
+          if (command === 'plugin:window|set_always_on_top') { pinned = args.value as boolean; return; }
+          if (command.startsWith('plugin:window|')) return command.endsWith('is_maximized') ? false : null;
+          if (command === 'sync_draft') { window.relayTest.draft = args.draft as Draft; return; }
+          if (command === 'start_task') {
+            window.relayTest.draft = args.draft as Draft;
+            window.relayTest.push({ phase: 'countdown', remainingSeconds: 5, total: Array.from(window.relayTest.draft.text).length, message: '等待输入，请在倒计时结束前选择输入位置' });
+          }
+          if (command === 'cancel_task') window.relayTest.push({ phase: 'stopped', remainingSeconds: 0, message: '已取消，尚未发送文本' });
+          if (command === 'save_settings') window.relayTest.push({ settings: args.settings as Snapshot['settings'] });
+          return structuredClone(state);
+        },
+      },
+      __TAURI_EVENT_PLUGIN_INTERNALS__: { unregisterListener: (_event: string, id: number) => { callbacks.delete(id); listeners.delete(id); } },
+    });
+  });
+  await page.goto('/'); await page.waitForLoadState('networkidle');
+  await expect(page.getByRole('button', { name: '开始输入' })).toBeEnabled();
+}
+
+test('native editor clear, undo, redo and subsequent editing', async ({ page }) => {
+  await openApp(page);
+  const source = page.getByRole('textbox', { name: '待输入文本' });
+  await source.fill('中文 abc');
+  await page.getByRole('button', { name: '清空', exact: true }).click();
+  await expect(source).toHaveValue('');
+  await page.keyboard.press('Control+z'); await expect(source).toHaveValue('中文 abc');
+  await expect(page.locator('#text-count')).toHaveText('6 个字符');
+  await page.keyboard.press('Control+y'); await expect(source).toHaveValue('');
+  await page.keyboard.press('Control+z'); await page.keyboard.press('End'); await page.keyboard.type('!');
+  await page.keyboard.press('Control+z'); await expect(source).toHaveValue('中文 abc');
+});
+
+test('invalid fields, restoration and countdown operation', async ({ page }) => {
+  await openApp(page); await page.locator('#source').fill('ab');
+  await page.getByRole('tab', { name: '设置' }).click(); await page.locator('#interval').fill('1.5');
+  await expect(page.locator('#interval-error')).toBeVisible();
+  await page.getByRole('tab', { name: '输入' }).click(); await page.locator('#start').click();
+  await expect(page.locator('#interval')).toBeFocused();
+  await page.getByRole('button', { name: '恢复默认' }).click();
+  await expect(page.locator('#interval-error')).toHaveCount(0);
+  await page.getByRole('tab', { name: '输入' }).click();
+  await page.locator('#start').click(); await expect(page.locator('#settings-tab')).toBeDisabled();
+  await expect(page.locator('#start')).toHaveText('取消输入（剩余 5 秒）');
+  await page.locator('#start').click(); await expect(page.locator('#settings-tab')).toBeEnabled();
+});
+
+test('disabled control gesture only interrupts and preserves source', async ({ page }) => {
+  await openApp(page); await page.locator('#source').fill('preserve');
+  await page.evaluate(() => window.relayTest.push({ phase: 'typing', sent: 1, total: 8, message: '已发送 1 / 8 字符' }));
+  const clear = page.locator('#clear'); await expect(clear).toBeDisabled();
+  const box = (await clear.boundingBox())!;
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2); await page.mouse.down();
+  await page.evaluate(() => window.relayTest.push({ phase: 'stopped', message: '已中止，剩余内容已取消' }));
+  await page.mouse.up(); await expect(page.locator('#source')).toHaveValue('preserve');
+  await clear.click(); await expect(page.locator('#source')).toHaveValue('');
+});
+
+test('layout matches widths, breakpoints, editor resizing and zoom', async ({ page }) => {
+  await openApp(page);
+  for (const width of [600, 563, 562, 521, 520, 421, 420, 390, 320]) {
+    await page.setViewportSize({ width, height: 1100 });
+    for (const height of [184, 320]) {
+      await page.locator('#source').evaluate((el, value) => { el.style.height = value + 'px'; }, height);
+      const inputHeight = (await page.locator('.window').boundingBox())!.height;
+      await page.locator('#settings-tab').click();
+      expect((await page.locator('.window').boundingBox())!.height).toBe(inputHeight);
+      await expect(page.locator('#start')).not.toBeVisible();
+      if (width <= 420) {
+        expect(await page.locator('.setting-row').evaluateAll(rows => rows.every(row => row.children[1].getBoundingClientRect().top >= row.children[0].getBoundingClientRect().bottom))).toBe(true);
+      }
+      await page.locator('#input-tab').click();
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    }
+  }
+  await page.setViewportSize({ width: 960, height: 1200 });
+  await page.evaluate(() => { document.body.style.zoom = '1.5'; });
+  const before = (await page.locator('.window').boundingBox())!.height;
+  await page.locator('#settings-tab').click(); expect((await page.locator('.window').boundingBox())!.height).toBe(before);
+  await page.screenshot({ path: 'test-results/settings-150.png', fullPage: true });
+});
+
+test('task states preserve typography and footer positions', async ({ page }) => {
+  await openApp(page); await page.setViewportSize({ width: 600, height: 900 });
+  const appearance = () => page.locator('#status-message').evaluate(el => {
+    const style = getComputedStyle(el); const rect = el.getBoundingClientRect();
+    return { font: [style.fontFamily, style.fontSize, style.fontWeight, style.lineHeight], x: rect.x, width: rect.width };
+  });
+  const baseline = await appearance(); const clear = await page.locator('#clear').boundingBox();
+  for (const [phase, message] of [['arming', '等待按键释放，松开快捷键后开始输入'], ['countdown', '等待输入，请在倒计时结束前选择输入位置'], ['typing', '已发送 1 / 3 字符 · 按键或点击停止'], ['done', '已完成，已发送 3 个字符'], ['stopped', '已中止，剩余内容已取消'], ['failed', '系统输入提交失败，请检查本地权限。']] as const) {
+    await page.evaluate(({ phase, message }) => window.relayTest.push({ phase, message, remainingSeconds: 5 }), { phase, message });
+    await expect(page.locator('#status-message')).toHaveText(message); expect(await appearance()).toEqual(baseline);
+    expect((await page.locator('#clear').boundingBox())!.x).toBe(clear!.x);
+  }
+  await page.screenshot({ path: 'test-results/input-600.png', fullPage: true });
+});
+
+test('pin uses independent clicks and keeps the stopping gesture protected', async ({ page }) => {
+  await openApp(page);
+  const pin = page.getByRole('button', { name: '置顶窗口' });
+  await pin.click();
+  await expect(page.getByRole('button', { name: '取消置顶' })).toHaveAttribute('aria-pressed', 'true');
+  await page.evaluate(() => window.relayTest.push({ phase: 'stopped', interactionBlocked: true }));
+  const pinned = page.getByRole('button', { name: '取消置顶' });
+  await expect(pinned).toBeDisabled();
+  const box = (await pinned.boundingBox())!;
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2); await page.mouse.down();
+  await page.evaluate(() => window.relayTest.push({ interactionBlocked: false }));
+  await page.mouse.up();
+  await expect(pinned).toHaveAttribute('aria-pressed', 'true');
+  await pinned.click(); await expect(pin).toHaveAttribute('aria-pressed', 'false');
+});
+
+test('hidden settings exit focus order and title buttons invoke native actions', async ({ page }) => {
+  await openApp(page); await page.locator('#input-tab').focus(); await page.keyboard.press('Tab');
+  await expect(page.locator('#source')).toBeFocused();
+  for (const name of ['最小化', '最大化或还原', '关闭']) await page.getByRole('button', { name }).click();
+  const calls = await page.evaluate(() => window.relayTest.calls);
+  expect(calls).toContain('plugin:window|minimize'); expect(calls).toContain('plugin:window|toggle_maximize'); expect(calls).toContain('plugin:window|close');
+});

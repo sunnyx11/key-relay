@@ -2,7 +2,20 @@
 
 ## 系统组成
 
-当前仓库包含文档、项目内 Skill 和 HTML 界面原型，尚无桌面应用运行组件。
+已确认的工程采用单前端应用和单 Rust crate，目录职责如下；实现验证状态见项目上下文。
+
+- `src/components/`：自定义标题栏、输入面板、设置面板和任务操作区。
+- `src/useRelay.ts`：编辑同步、命令调用及状态订阅。
+- `src/bridge.ts`：Tauri 通信契约。
+- `src/styles/`：视觉变量、公共控件和布局。
+- `src-tauri/src/task.rs`：任务状态、快照、计时和取消。
+- `src-tauri/src/text.rs`：文本转换与计数。
+- `src-tauri/src/settings.rs`：参数校验和配置保存。
+- `src-tauri/src/shortcut.rs`：全局快捷键注册。
+- `src-tauri/src/windows/`：输入事件与系统监听。
+- `src-tauri/src/commands.rs`、`lib.rs`：命令入口、应用装配与退出清理。
+- `tests/e2e/`、`src-tauri/tests/`：界面与原生集成检查。
+- `tests/manual/`：Windows 和 RDP 人工验收步骤。
 
 - `docs/project/`：项目背景、原则、架构与术语。
 - `docs/domains/text-input/`：文本自动输入领域的需求、设计及确认状态。
@@ -12,7 +25,7 @@
 
 ### 已确认的应用组成
 
-技术选型见[项目上下文](context.md#技术环境与依赖)。应用方案由 React 界面、Tauri 桌面容器及 Rust 原生逻辑组成，尚无对应运行组件。
+技术选型见[项目上下文](context.md#技术环境与依赖)。应用由 React 界面、Tauri 桌面容器及 Rust 原生逻辑组成。
 
 - React 管理编辑内容和界面展示，通过 Tauri 调用 Rust。
 - Rust 管理任务状态、计时和 Windows 输入操作。
@@ -25,7 +38,7 @@
 
 ## 整体数据流
 
-以下为已确认的应用职责与目标数据流，尚待 Windows 桌面实现验证：
+应用的数据处理顺序如下：
 
 1. React 将准备好的文本、设置及按钮操作提交给 Rust；全局快捷键事件在 Rust 侧处理。
 2. Rust 维护任务状态，负责倒计时和输入发送的计时。
@@ -41,8 +54,8 @@
 
 ## 部署结构
 
-已选应用形态为 Windows 本地桌面应用。React 构建产物由 Tauri 应用加载，界面使用 WebView2。安装包格式及 WebView2 分发方式尚未确定。
+已选应用形态为本地 Windows 桌面应用。React 构建产物由 WebView2 加载。NSIS 安装程序面向当前用户，缺少 WebView2 时联网安装。远程服务器通过 RDP 接收键盘事件，软件安装在本地。
 
 ## 鉴权与信任边界
 
-模拟输入受 Windows 进程完整性级别限制。权限策略和高权限目标程序的兼容范围需要单独确定，具体约束见[领域设计](../domains/text-input/design.md#兼容与部署)。
+模拟输入受 Windows 进程完整性级别限制。工具默认普通权限，本地 RDP 客户端以高权限运行时需要匹配权限。远程目标程序的权限由远程会话处理，具体约束见[领域设计](../domains/text-input/design.md#兼容与部署)。

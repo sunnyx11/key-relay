@@ -1,0 +1,26 @@
+button, input, select, textarea { font: inherit; color: inherit; }
+button { cursor: pointer; }
+button:disabled { cursor: default; color: var(--disabled-text); }
+button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.button { min-height: 26px; padding: 2px 8px; border: 1px solid var(--button-line); border-radius: var(--button-radius); font-size: 13px; color: var(--button-text); background: var(--button); white-space: nowrap; }
+.button:hover:enabled { color: var(--text); background: var(--button-hover); border-color: var(--button-hover-line); }
+.button:active:enabled { background: var(--button-active); }
+textarea { display: block; width: 100%; border: 1px solid var(--control-line); border-radius: 0; background: var(--paper); padding: 9px 10px; line-height: 1.8; resize: vertical; }
+textarea::placeholder { color: var(--placeholder); }
+textarea[readonly] { background: var(--button); }
+input[type="number"] { height: var(--control-height); width: 66px; padding: 2px 7px; border: 1px solid var(--control-line); background: var(--paper); }
+.setting-value { display: flex; align-items: center; height: var(--control-height); border: 1px solid var(--control-line); border-radius: 2px; background: var(--paper); }
+.setting-value:focus-within { outline: 2px solid var(--focus); outline-offset: 2px; }
+.setting-value input { width: 100%; min-width: 0; height: 28px; border: 0; background: transparent; outline: none; }
+.setting-value span { padding: 0 9px 0 4px; flex: 0 0 auto; color: var(--muted); font-size: 12px; }
+.setting-value:has(input:disabled) { background: var(--disabled-surface); }
+.setting-value:has([aria-invalid="true"]) { border-color: var(--error); }
+select { width: 100%; height: var(--control-height); padding: 2px 24px 2px 8px; border: 1px solid var(--control-line); border-radius: 2px; background: var(--button); }
+.caption-button { width: 32px; height: 27px; padding: 0; border: 0; color: var(--muted); background: transparent; display: grid; place-items: center; }
+.caption-button svg { width: 16px; height: 16px; stroke: currentColor; stroke-width: 1; stroke-linecap: round; stroke-linejoin: round; fill: none; }
+.caption-button:focus-visible { outline-offset: -3px; }
+.caption-button:hover:enabled { background: var(--button-hover); color: var(--text); }
+.caption-button:active:enabled { background: var(--button-active); }
+.caption-button.pin[aria-pressed="true"] { background: var(--accent-surface); color: var(--accent); }
+.caption-button.pin:disabled { color: var(--disabled-text); }
+.caption-button.close:hover:enabled { background: var(--error); color: var(--paper); }
