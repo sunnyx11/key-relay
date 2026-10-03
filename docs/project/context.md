@@ -16,6 +16,8 @@ key-relay 运行在本地 Windows，将准备好的文本通过模拟键盘输�
 
 仓库包含 Tauri 桌面应用、React 界面、Rust 任务与 Windows 输入模块，以及 [HTML 界面原型](../../prototypes/key-relay.html)。开发、构建、自动测试和安装包入口见 [README](../../README.md)。
 
+仓库包含标签构建与 Release 草稿配置，发布脚本和 Windows 构建具有本地验证。GitHub 托管环境的首次实际执行待版本标签推送后验证；发布操作与附件约定见[版本发布](../release.md)。
+
 Spec 根目录为 `docs/`，导航入口为 `docs/index.md`。需求确认与兼容性验证分别表述。文本处理、任务状态、设置、界面和 Windows 输入具备本地自动验证；RDP 实际兼容性待人工验证。Windows 系统版本、目标程序、安装环境及缩放的验收范围见[Windows 验收说明](../../tests/manual/windows.md)。
 
 ## 技术环境与依赖

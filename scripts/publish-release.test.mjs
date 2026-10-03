@@ -1,0 +1,85 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { createHash } from 'node:crypto';
+
+function fixture(t, existing = [], version = '0.2.0') {
+  const directory = mkdtempSync(join(tmpdir(), 'key-relay-publish-test-'));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  const files = [`Key Relay_${version}_x64-setup.exe`, 'key-relay.exe'];
+  for (const file of files) writeFileSync(join(directory, file), file);
+  writeFileSync(join(directory, 'SHA256SUMS.txt'), files.map(file => `${createHash('sha256').update(file).digest('hex')}  ${file}\n`).join(''));
+  writeFileSync(join(directory, 'release-notes.md'), '### Added\n- About tab.\n');
+  const calls = [];
+  const repos = {};
+  for (const name of ['listReleases', 'listReleaseAssets', 'createRelease', 'updateRelease', 'deleteReleaseAsset', 'uploadReleaseAsset']) {
+    repos[name] = async args => {
+      calls.push({ name, args });
+      return { data: { id: 7, upload_url: 'https://uploads.github.com/repos/owner/repo/releases/7/assets{?name,label}', html_url: 'https://github.com/owner/repo/releases/7' } };
+    };
+  }
+  const github = { rest: { repos }, paginate: async method => method === repos.listReleases ? existing : [{ id: 11, name: 'key-relay.exe' }] };
+  return { directory, calls, github, repo: { owner: 'owner', repo: 'repo' } };
+}
+
+test('creates only a draft and uploads the three verified attachments', async t => {
+  const { publishDraft } = await import('./publish-release.mjs');
+  const f = fixture(t);
+  await publishDraft(f.github, f.repo, 'v0.2.0', f.directory);
+  const create = f.calls.find(call => call.name === 'createRelease').args;
+  assert.equal(create.draft, true);
+  assert.equal(create.prerelease, false);
+  assert.equal(create.tag_name, 'v0.2.0');
+  assert.equal(create.body, '### Added\n- About tab.\n');
+  assert.deepEqual(f.calls.filter(call => call.name === 'uploadReleaseAsset').map(call => call.args.name).sort(), ['Key Relay_0.2.0_x64-setup.exe', 'SHA256SUMS.txt', 'key-relay.exe'].sort());
+});
+
+test('marks prerelease drafts from the tag suffix', async t => {
+  const { publishDraft } = await import('./publish-release.mjs');
+  const f = fixture(t, [], '0.2.0-rc.1');
+  await publishDraft(f.github, f.repo, 'v0.2.0-rc.1', f.directory);
+  assert.equal(f.calls.find(call => call.name === 'createRelease').args.prerelease, true);
+});
+
+test('GitHub lookup failure stops without creating a replacement release', async t => {
+  const { publishDraft } = await import('./publish-release.mjs');
+  const f = fixture(t);
+  f.github.paginate = async () => { throw new Error('Access denied'); };
+  await assert.rejects(publishDraft(f.github, f.repo, 'v0.2.0', f.directory), /Access denied/);
+  assert.deepEqual(f.calls, []);
+});
+
+test('rerun updates the existing draft and replaces matching attachments', async t => {
+  const { publishDraft } = await import('./publish-release.mjs');
+  const f = fixture(t, [{ tag_name: 'v0.2.0', id: 7, draft: true }]);
+  await publishDraft(f.github, f.repo, 'v0.2.0', f.directory);
+  assert.equal(f.calls.some(call => call.name === 'createRelease'), false);
+  assert.equal(f.calls.find(call => call.name === 'updateRelease').args.draft, true);
+  assert.equal(f.calls.find(call => call.name === 'deleteReleaseAsset').args.asset_id, 11);
+});
+
+test('published release is never edited or uploaded to', async t => {
+  const { publishDraft } = await import('./publish-release.mjs');
+  const f = fixture(t, [{ tag_name: 'v0.2.0', id: 7, draft: false }]);
+  await assert.rejects(publishDraft(f.github, f.repo, 'v0.2.0', f.directory), /already published/);
+  assert.deepEqual(f.calls, []);
+});
+
+test('corrupted attachments stop before any GitHub mutation', async t => {
+  const { publishDraft } = await import('./publish-release.mjs');
+  const f = fixture(t);
+  writeFileSync(join(f.directory, 'key-relay.exe'), 'corrupted');
+  await assert.rejects(publishDraft(f.github, f.repo, 'v0.2.0', f.directory), /checksum/i);
+  assert.deepEqual(f.calls, []);
+});
+
+test('upload failure rejects the run while retaining draft status', async t => {
+  const { publishDraft } = await import('./publish-release.mjs');
+  const f = fixture(t);
+  f.github.rest.repos.uploadReleaseAsset = async () => { throw new Error('upload failed'); };
+  await assert.rejects(publishDraft(f.github, f.repo, 'v0.2.0', f.directory), /upload failed/);
+  assert.equal(f.calls.find(call => call.name === 'createRelease').args.draft, true);
+  assert.equal(f.calls.some(call => call.args.draft === false), false);
+});

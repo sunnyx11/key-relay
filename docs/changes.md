@@ -8,7 +8,13 @@
 
 ## accepted
 
-无
+- [text-input/008](domains/text-input/changes/008-change.md)：
+
+  - 变更目的：版本标签需要触发自动检查和 Windows 打包，并生成供人工公开的 Release 草稿。
+
+  - 创建时间：2026-10-03 15:51:37
+
+  - 完成时间：无
 
 ## completed
 

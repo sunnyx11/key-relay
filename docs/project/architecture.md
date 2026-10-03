@@ -16,6 +16,10 @@
 - `src-tauri/src/commands.rs`、`lib.rs`：命令入口、应用装配与退出清理。
 - `tests/e2e/`、`src-tauri/tests/`：界面与原生集成检查。
 - `tests/manual/`：Windows 和 RDP 人工验收步骤。
+- `.github/workflows/release.yml`：版本标签触发的 Windows 构建与 Release 草稿任务。
+- `scripts/release.mjs`：版本和更新说明校验、构建附件准备及 SHA-256 计算。
+- `scripts/publish-release.mjs`：草稿创建、更新与附件上传，使用 Actions 提供的 GitHub 客户端。
+- `CHANGELOG.md`、`docs/release.md`：使用者变更记录与维护者发布说明。
 
 - `docs/project/`：项目背景、原则、架构与术语。
 - `docs/domains/text-input/`：文本自动输入领域的需求、设计及确认状态。
@@ -57,6 +61,8 @@
 已选应用形态为本地 Windows 桌面应用。React 构建产物由 WebView2 加载。NSIS 安装程序面向当前用户，缺少 WebView2 时联网安装。远程服务器通过 RDP 接收键盘事件，软件安装在本地。
 
 ## 鉴权与信任边界
+
+发布配置将只读构建任务与具有 `contents: write` 权限的草稿任务分开。附件通过 Actions 产物传递，发布前再次验证 SHA-256。配置、重试规则和验证范围见[版本发布](../release.md)。
 
 关于页外部链接权限限定于主窗口及设计文档列出的四个固定地址。版本取自应用元数据，完整 MIT 许可证随前端打包供离线读取。
 

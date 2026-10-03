@@ -65,6 +65,12 @@ npm run package
 
 安装包位于 `src-tauri/target/release/bundle/nsis/`，可执行程序位于 `src-tauri/target/release/key-relay.exe`。
 
+## 自动打包与发布
+
+推送版本标签后，GitHub Actions 检查版本与更新说明，运行测试并构建 Windows x64 安装包。发布任务创建 Release 草稿，附带安装包、独立 EXE 和 SHA-256 校验文件，由维护者检查后公开。
+
+更新说明维护在 [CHANGELOG.md](CHANGELOG.md)，发布前应为目标版本建立带日期的条目。操作步骤、附件说明和首次 GitHub 运行的验证范围见[版本发布](docs/release.md)。
+
 ## 验证入口
 
 普通自动测试使用模拟时钟、输入编码和通信替身，保持实际桌面输入环境。浏览器测试首次运行前安装 Chromium。
@@ -72,6 +78,7 @@ npm run package
 ```bash
 npx playwright install chromium
 npm test
+npm run test:release
 npm run test:rust
 npm run lint
 npm run test:e2e
