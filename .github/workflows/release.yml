@@ -110,7 +110,13 @@ jobs:
           cache-bin: false
           save-if: false
       - name: Build Windows installer and prepare attachments
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          TAURI_UPDATER_PUBLIC_KEY: ${{ vars.TAURI_UPDATER_PUBLIC_KEY }}
         run: |
+          if ([string]::IsNullOrWhiteSpace($env:TAURI_SIGNING_PRIVATE_KEY)) { throw "Missing updater signing private key" }
+          if ([string]::IsNullOrWhiteSpace($env:TAURI_UPDATER_PUBLIC_KEY)) { throw "Missing updater public key" }
           npm.cmd run package -- -- --locked
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           npm run release:bundle -- "$env:RELEASE_TAG"

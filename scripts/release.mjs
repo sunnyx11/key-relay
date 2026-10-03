@@ -2,6 +2,7 @@ import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
+import { Buffer } from 'node:buffer';
 import process from 'node:process';
 import { log, error } from 'node:console';
 
@@ -58,12 +59,22 @@ export function bundleRelease(root, tag) {
   const sources = [
     [installer, `src-tauri/target/release/bundle/nsis/${installer}`],
     ['key-relay.exe', 'src-tauri/target/release/key-relay.exe'],
+    [`${installer}.sig`, `src-tauri/target/release/bundle/nsis/${installer}.sig`],
   ];
   const binaries = sources.map(([name, path]) => {
     const bytes = readFileSync(join(root, path));
     if (!bytes.length) throw new Error(`Empty release binary: ${path}`);
     return { name, bytes };
   });
+  const manifest = {
+    version: release.version, notes: release.notes, pub_date: new Date().toISOString(),
+    platforms: { 'windows-x86_64': {
+      signature: binaries[2].bytes.toString('utf8').trim(),
+      url: `https://github.com/sunnyx11/key-relay/releases/download/${tag}/${encodeURIComponent(installer)}`,
+    } },
+  };
+  if (!manifest.platforms['windows-x86_64'].signature) throw new Error('Empty updater signature.');
+  binaries.push({ name: 'latest.json', bytes: Buffer.from(JSON.stringify(manifest, null, 2) + '\n') });
   const output = join(root, 'src-tauri/target/release-assets', tag);
   mkdirSync(output, { recursive: true });
   for (const { name, bytes } of binaries) writeFileSync(join(output, name), bytes);

@@ -31,6 +31,8 @@ pub enum Message {
     Shortcut(u64),
     Hook(HookEvent),
     Shutdown(Reply),
+    PrepareUpdate(Reply),
+    ResumeUpdate(Reply),
 }
 /// Application-owned worker sender; the worker owns hooks and persistent preferences.
 pub struct Runtime {
@@ -50,10 +52,9 @@ impl Runtime {
             if let Some(error) = load_error {
                 engine.snapshot.message = error;
             }
-            let mut hooks = Hooks::start(signals.clone(), move |event| {
-                let _ = hook_sender.send(Message::Hook(event));
-            });
-            let hook_error = hooks.as_ref().err().cloned();
+            let mut hooks = start_hooks(signals.clone(), hook_sender.clone());
+            let mut hook_error = hooks.as_ref().err().cloned();
+            let mut updating = false;
             if let Some(error) = &hook_error {
                 engine.snapshot.phase = Phase::Failed;
                 engine.snapshot.message = error.clone();
@@ -101,7 +102,11 @@ impl Runtime {
                         let _ = reply.send(Ok(engine.snapshot.clone()));
                     }
                     Ok(Message::Save(settings, reply)) => {
-                        let result = settings.save(&path);
+                        let result = if updating {
+                            Err("正在安装更新，请稍候。".into())
+                        } else {
+                            settings.save(&path)
+                        };
                         if result.is_ok() {
                             if settings.shortcut != engine.snapshot.settings.shortcut
                                 || engine.snapshot.shortcut_error.is_some()
@@ -116,7 +121,7 @@ impl Runtime {
                         let _ = reply.send(result.map(|_| engine.snapshot.clone()));
                     }
                     Ok(Message::Shortcut(cycle)) => {
-                        if hook_error.is_none() {
+                        if !updating && hook_error.is_none() {
                             let was_busy = engine.busy();
                             if !was_busy {
                                 signals.stop.store(false, Ordering::SeqCst);
@@ -134,6 +139,45 @@ impl Runtime {
                     }
                     Ok(Message::Hook(HookEvent::MouseDown)) => engine.mouse_down(),
                     Ok(Message::Hook(HookEvent::MouseUp)) => {}
+                    Ok(Message::PrepareUpdate(reply)) => {
+                        if let Err(error) = engine.prepare_update() {
+                            let _ = reply.send(Err(error));
+                        } else {
+                            updating = true;
+                            signals.phase.store(0, Ordering::SeqCst);
+                            if let Ok(hooks) = &mut hooks {
+                                hooks.stop();
+                            }
+                            let result = app
+                                .global_shortcut()
+                                .unregister_all()
+                                .map_err(|_| "快捷键释放失败。".to_string());
+                            let _ = reply.send(result.map(|_| engine.snapshot.clone()));
+                        }
+                    }
+                    Ok(Message::ResumeUpdate(reply)) => {
+                        if updating {
+                            // Releases while hooks were stopped cannot clear these cached flags.
+                            signals.stop.store(false, Ordering::SeqCst);
+                            signals.mouse_buttons.store(0, Ordering::SeqCst);
+                            hooks = start_hooks(signals.clone(), hook_sender.clone());
+                            hook_error = hooks.as_ref().err().cloned();
+                            engine.snapshot.shortcut_error = shortcut::register(
+                                &app,
+                                &engine.snapshot.settings.shortcut,
+                                signals.clone(),
+                            )
+                            .err();
+                            updating = false;
+                            engine.resume_update();
+                            engine.snapshot.sequence += 1;
+                        }
+                        let _ = reply.send(
+                            hook_error
+                                .clone()
+                                .map_or_else(|| Ok(engine.snapshot.clone()), Err),
+                        );
+                    }
                     Ok(Message::Shutdown(reply)) => {
                         engine.cancel("软件退出，任务已结束");
                         signals.phase.store(0, Ordering::SeqCst);
@@ -204,6 +248,25 @@ impl Runtime {
         });
     }
 }
+fn start_hooks(signals: Arc<Signals>, sender: Sender<Message>) -> Result<Hooks, String> {
+    Hooks::start(signals, move |event| {
+        let _ = sender.send(Message::Hook(event));
+    })
+}
+
+/// Serialize installation preparation with task starts and settings writes.
+pub async fn prepare_update(runtime: &Runtime) -> Result<Snapshot, String> {
+    if runtime.closing.load(Ordering::SeqCst) {
+        return Err("程序正在退出。".into());
+    }
+    request(runtime.sender.clone(), Message::PrepareUpdate).await
+}
+
+/// Restore native resources when installation cannot start.
+pub async fn resume_update(runtime: &Runtime) -> Result<Snapshot, String> {
+    request(runtime.sender.clone(), Message::ResumeUpdate).await
+}
+
 fn publish_phase(signals: &Signals, phase: Phase) {
     signals.phase.store(
         match phase {

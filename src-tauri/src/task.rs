@@ -52,6 +52,7 @@ pub struct Engine {
     held: HashSet<u32>,
     blocked_cycle: Option<u64>,
     cycle: u64,
+    installing: bool,
 }
 impl Engine {
     /// Initialize idle state and an empty draft using validated preferences.
@@ -79,6 +80,7 @@ impl Engine {
             held: HashSet::new(),
             blocked_cycle: None,
             cycle: 0,
+            installing: false,
         }
     }
     /// True while a task owns the send pipeline.
@@ -87,6 +89,19 @@ impl Engine {
             self.snapshot.phase,
             Phase::Arming | Phase::Countdown | Phase::Typing
         )
+    }
+    /// Reserve the idle task owner for installation; both start sources share this guard.
+    pub fn prepare_update(&mut self) -> Result<(), String> {
+        if self.installing || self.busy() || self.snapshot.interaction_blocked {
+            return Err("任务结束后可安装更新。".into());
+        }
+        self.installing = true;
+        Ok(())
+    }
+    /// Release the installation reservation after native resources have been restored.
+    pub fn resume_update(&mut self) {
+        self.installing = false;
+        self.held.clear();
     }
     /// Accept only newer editor revisions.
     pub fn sync(&mut self, draft: Draft) {
@@ -102,6 +117,9 @@ impl Engine {
         own_foreground: bool,
         cycle: u64,
     ) -> Result<(), String> {
+        if self.installing {
+            return Err("正在安装更新，请稍候。".into());
+        }
         if shortcut && self.blocked_cycle == Some(cycle) {
             return Ok(());
         }
@@ -262,6 +280,34 @@ mod tests {
             settings: serde_json::to_value(&e.snapshot.settings).unwrap(),
         });
         e
+    }
+    #[test]
+    fn installation_blocks_both_start_sources_until_recovery() {
+        for shortcut in [false, true] {
+            let mut e = engine("preserved draft");
+            e.prepare_update().unwrap();
+            assert!(e.start(shortcut, 0, false, 1).is_err());
+            assert!(!e.busy());
+            assert!(e.prepare_update().is_err());
+            e.resume_update();
+            e.start(shortcut, 0, false, 2).unwrap();
+            assert!(e.busy());
+            assert_eq!(e.snapshot.total, 15);
+        }
+    }
+    #[test]
+    fn active_or_interrupted_tasks_defer_installation() {
+        for phase in [Phase::Arming, Phase::Countdown, Phase::Typing] {
+            let mut e = engine("ab");
+            e.snapshot.phase = phase;
+            assert!(e.prepare_update().is_err());
+            assert_eq!(e.snapshot.phase, phase);
+        }
+        let mut e = engine("ab");
+        e.snapshot.interaction_blocked = true;
+        assert!(e.prepare_update().is_err());
+        e.snapshot.interaction_blocked = false;
+        e.prepare_update().unwrap();
     }
     #[test]
     fn atomic_stop_blocks_same_shortcut_cycle() {

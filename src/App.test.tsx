@@ -4,14 +4,14 @@ import App from './App';
 import { getVersion } from '@tauri-apps/api/app';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import license from '../LICENSE?raw';
-import { bridge, defaults, type Snapshot } from './bridge';
+import { bridge, defaults, updateBridge, type Snapshot, type UpdateSnapshot } from './bridge';
 
 vi.mock('@tauri-apps/api/app', () => ({ getVersion: vi.fn() }));
 vi.mock('@tauri-apps/plugin-opener', () => ({ openUrl: vi.fn() }));
 
 vi.mock('./bridge', async importOriginal => {
   const original = await importOriginal<typeof import('./bridge')>();
-  return { ...original, bridge: { snapshot: vi.fn(), sync: vi.fn(), start: vi.fn(), cancel: vi.fn(), save: vi.fn(), subscribe: vi.fn() } };
+  return { ...original, bridge: { snapshot: vi.fn(), sync: vi.fn(), start: vi.fn(), cancel: vi.fn(), save: vi.fn(), subscribe: vi.fn() }, updateBridge: { snapshot: vi.fn(), preference: vi.fn(), check: vi.fn(), download: vi.fn(), install: vi.fn(), subscribe: vi.fn() } };
 });
 const pinWindow = vi.hoisted(() => ({ isAlwaysOnTop: vi.fn(), setAlwaysOnTop: vi.fn() }));
 const sizingWindow = vi.hoisted(() => ({ setSize: vi.fn(), isMaximized: vi.fn() }));
@@ -19,7 +19,15 @@ vi.mock('@tauri-apps/api/window', () => ({ getCurrentWindow: () => ({ ...pinWind
 
 const initial: Snapshot = { sequence: 1, phase: 'idle', sent: 0, total: 0, remainingSeconds: 0, message: '', settings: defaults, shortcutError: null };
 let notify: (state: Snapshot) => void;
+let updateNotify: (state: UpdateSnapshot) => void;
+const updateInitial: UpdateSnapshot = { sequence: 1, phase: 'idle', installed: true, autoCheck: true, version: null, notes: '', downloaded: 0, total: null, message: '' };
 beforeEach(() => {
+  vi.mocked(updateBridge.snapshot).mockResolvedValue(updateInitial);
+  vi.mocked(updateBridge.subscribe).mockImplementation(async handler => { updateNotify = handler; return () => {}; });
+  vi.mocked(updateBridge.check).mockResolvedValue({ ...updateInitial, sequence: 2, phase: 'available', version: '2.0.0', notes: '修复输入问题' });
+  vi.mocked(updateBridge.download).mockResolvedValue({ ...updateInitial, sequence: 3, phase: 'ready', version: '2.0.0' });
+  vi.mocked(updateBridge.install).mockResolvedValue({ ...updateInitial, sequence: 4, phase: 'ready', message: '任务结束后可安装更新。' });
+  vi.mocked(updateBridge.preference).mockImplementation(async autoCheck => ({ ...updateInitial, sequence: 5, autoCheck }));
   vi.mocked(getVersion).mockResolvedValue('1.2.3');
   vi.mocked(openUrl).mockResolvedValue();
   sizingWindow.setSize.mockResolvedValue(undefined);
@@ -40,6 +48,78 @@ async function mount() {
   await waitFor(() => expect(screen.getByRole('button', { name: '开始输入' })).toBeEnabled());
 }
 describe('editor and native task integration', () => {
+  it('checks without downloading and requires explicit confirmation before installation', async () => {
+    await mount();
+    fireEvent.input(screen.getByRole('textbox'), { target: { value: '保留文本' } });
+    fireEvent.click(screen.getByRole('tab', { name: '关于' }));
+    fireEvent.click(screen.getByRole('button', { name: '检查更新' }));
+    await waitFor(() => expect(screen.getByText('发现新版本 2.0.0')).toBeVisible());
+    expect(updateBridge.download).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: '下载更新' }));
+    await waitFor(() => expect(screen.getByRole('button', { name: '安装并重启' })).toBeEnabled());
+    expect(updateBridge.install).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: '安装并重启' }));
+    expect(screen.getByText('重启后将清除编辑框中的全部文本，请先保存需要保留的内容。')).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: '暂不安装' }));
+    expect(updateBridge.install).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: '安装并重启' }));
+    fireEvent.click(screen.getByRole('button', { name: '确认安装并重启' }));
+    await waitFor(() => expect(updateBridge.install).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(screen.getByText('任务结束后可安装更新。')).toBeVisible());
+    fireEvent.click(screen.getByRole('tab', { name: '输入' }));
+    expect(screen.getByRole('textbox')).toHaveValue('保留文本');
+  });
+  it('keeps portable updates manual and never changes the selected tab on discovery', async () => {
+    vi.mocked(updateBridge.snapshot).mockResolvedValue({ ...updateInitial, installed: false });
+    await mount();
+    act(() => updateNotify({ ...updateInitial, sequence: 2, installed: false, phase: 'available', version: '2.0.0' }));
+    expect(screen.getByRole('tab', { name: '输入' })).toHaveAttribute('aria-selected', 'true');
+    fireEvent.click(screen.getByRole('tab', { name: /关于/ }));
+    expect(screen.getByRole('link', { name: '前往下载' })).toBeVisible();
+    expect(screen.queryByRole('button', { name: '下载更新' })).not.toBeInTheDocument();
+    expect(updateBridge.download).not.toHaveBeenCalled();
+  });
+  it('automatically checks after ten seconds and respects the persistent opt-out', async () => {
+    vi.useFakeTimers();
+    const view = render(<App />);
+    try {
+      await act(async () => {});
+      await act(async () => { await vi.advanceTimersByTimeAsync(9999); });
+      expect(updateBridge.check).not.toHaveBeenCalled();
+      await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+      expect(updateBridge.check).toHaveBeenCalledTimes(1);
+      expect(updateBridge.download).not.toHaveBeenCalled();
+      expect(screen.getByRole('tab', { name: '输入' })).toHaveAttribute('aria-selected', 'true');
+      fireEvent.click(screen.getByRole('tab', { name: /关于/ }));
+      await act(async () => { fireEvent.click(screen.getByRole('checkbox', { name: '自动检查更新' })); });
+      expect(updateBridge.preference).toHaveBeenCalledWith(false);
+      await act(async () => { await vi.advanceTimersByTimeAsync(86_400_000); });
+      expect(updateBridge.check).toHaveBeenCalledTimes(1);
+    } finally { view.unmount(); vi.useRealTimers(); }
+  });
+  it('discards an installation confirmation when an input task starts', async () => {
+    vi.mocked(updateBridge.snapshot).mockResolvedValue({ ...updateInitial, phase: 'ready', version: '2.0.0' });
+    await mount();
+    fireEvent.click(screen.getByRole('tab', { name: /关于/ }));
+    fireEvent.click(screen.getByRole('button', { name: '安装并重启' }));
+    act(() => notify({ ...initial, sequence: 2, phase: 'typing' }));
+    expect(screen.getByRole('tab', { name: '输入' })).toHaveAttribute('aria-selected', 'true');
+    act(() => notify({ ...initial, sequence: 3, phase: 'done' }));
+    fireEvent.click(screen.getByRole('tab', { name: /关于/ }));
+    expect(screen.queryByRole('button', { name: '确认安装并重启' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '安装并重启' })).toBeEnabled();
+    expect(updateBridge.install).not.toHaveBeenCalled();
+  });
+  it('stops installation if valid settings cannot be persisted', async () => {
+    vi.mocked(updateBridge.snapshot).mockResolvedValue({ ...updateInitial, phase: 'ready', version: '2.0.0' });
+    vi.mocked(bridge.save).mockRejectedValue(new Error('保存设置失败'));
+    await mount();
+    fireEvent.click(screen.getByRole('tab', { name: /关于/ }));
+    fireEvent.click(screen.getByRole('button', { name: '安装并重启' }));
+    fireEvent.click(screen.getByRole('button', { name: '确认安装并重启' }));
+    await waitFor(() => expect(screen.getByRole('region', { name: '应用更新' })).toHaveTextContent('Error: 保存设置失败'));
+    expect(updateBridge.install).not.toHaveBeenCalled();
+  });
   it('shows runtime version, contact links and the bundled license while preserving the draft', async () => {
     await mount();
     fireEvent.input(screen.getByRole('textbox'), { target: { value: '保留文本' } });

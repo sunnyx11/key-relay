@@ -48,8 +48,8 @@ async page => {
       await page.locator('#input-tab').focus();
       await page.keyboard.press('End');
       check(await page.locator('#about-tab').getAttribute('aria-selected') === 'true', 'End must select About');
-      check(await page.locator('.about-version').textContent() === '版本 0.1.0 · Windows 64 位', 'Version metadata differs');
-      const links = await page.locator('#about-panel a').evaluateAll(items => items.map(item => item.getAttribute('href')));
+      check(await page.locator('.about-version').textContent() === '版本 0.2.0 · Windows 64 位', 'Version metadata differs');
+      const links = await page.locator('.about-support a').evaluateAll(items => items.map(item => item.getAttribute('href')));
       check(JSON.stringify(links) === JSON.stringify(['https://github.com/sunnyx11/key-relay', 'https://github.com/sunnyx11/key-relay#readme', 'https://github.com/sunnyx11/key-relay/issues', 'mailto:hkhl888@foxmail.com']), 'Support links differ');
       check(await page.locator('#input-panel').evaluate(el => el.inert), 'Hidden input remains interactive');
       check(await page.locator('.footer').evaluate(el => el.inert), 'Hidden footer remains interactive');

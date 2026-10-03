@@ -6,7 +6,7 @@ Key Relay 在本地 Windows 将准备好的文本作为键盘事件发送到当�
 
 ## 安装与使用
 
-运行 `Key Relay_0.1.0_x64-setup.exe`，按当前用户安装。支持目标为 Windows 10／11 x64，使用 WebView2；安装程序在缺少运行时时联网下载安装。
+运行 Release 中的 `Key Relay_<版本>_x64-setup.exe`，按当前用户安装。支持目标为 Windows 10／11 x64，使用 WebView2；安装程序在缺少运行时时联网下载安装。
 
 1. 在“输入”页填写或粘贴文本。
 2. 选择一种启动方式：
@@ -26,6 +26,18 @@ Enter 与 Tab 使用对应按键语义，可能提交命令、提交表单或切
 “关于”页显示应用版本、项目主页、使用说明和问题反馈入口。联系邮箱为 [hkhl888@foxmail.com](mailto:hkhl888@foxmail.com)，点击后调用默认邮件应用。MIT 许可证可在页内离线查看。
 
 输入、设置、关于及许可证视图保持相同窗口高度，较长内容在关于面板内滚动。左右方向键、Home 和 End 可切换可用页签。活动任务期间关于页签禁用，从关于页启动任务时切回输入页显示状态。
+
+## 应用更新
+
+0.2.0 起提供更新检查。0.1.0 需要先手动安装带更新功能的版本。
+
+- 默认在启动完成 10 秒后检查，此后每 24 小时检查一次。“关于”页可手动检查或关闭自动检查。
+- 检查仅获取版本和说明。安装版点击“下载更新”后下载并验证签名，再选择“安装并重启”并确认文本清除提示。
+- 安装前保存有效设置，并等待输入任务结束。重启会清除编辑文本，需要保留的内容应先自行保存。
+- 独立 EXE 通过“前往下载”获取新版，退出软件后替换文件。
+- 更新偏好保存在用户配置目录的 `updates.json`，示例为 `{"autoCheck":true}`。更新请求仅访问发布服务，省略编辑文本。
+
+正式更新需要发布签名密钥和公开的版本清单。开发构建未配置公钥时显示配置提示。签名升级、安装失败恢复及 GitHub 正式通道的完整验收状态见[版本发布](docs/release.md)。
 
 ## 设置与数据
 
@@ -60,14 +72,14 @@ npm run desktop
 
 ```bash
 npm run build
-npm run package
+npm run tauri -- build --no-bundle
 ```
 
-安装包位于 `src-tauri/target/release/bundle/nsis/`，可执行程序位于 `src-tauri/target/release/key-relay.exe`。
+安装包位于 `src-tauri/target/release/bundle/nsis/`，可执行程序位于 `src-tauri/target/release/key-relay.exe`。生成带更新签名的安装包需要按[版本发布](docs/release.md#更新签名配置)配置密钥后执行 `npm run package`。
 
 ## 自动打包与发布
 
-推送版本标签后，GitHub Actions 检查版本与更新说明，运行测试并构建 Windows x64 安装包。发布任务创建 Release 草稿，附带安装包、独立 EXE 和 SHA-256 校验文件，由维护者检查后公开。
+推送版本标签后，GitHub Actions 检查版本与更新说明，运行测试并构建 Windows x64 安装包。发布任务创建 Release 草稿，附带安装包、独立 EXE、更新签名、版本清单和 SHA-256 校验文件，由维护者检查后公开。
 
 更新说明维护在 [CHANGELOG.md](CHANGELOG.md)，发布前应为目标版本建立带日期的条目。操作步骤、附件说明和首次 GitHub 运行的验证范围见[版本发布](docs/release.md)。
 
@@ -91,7 +103,7 @@ npm run specs
 
 ```bash
 npm run test:native-input
-npm run package
+npm run tauri -- build --no-bundle
 npm run test:desktop
 ```
 

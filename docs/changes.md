@@ -24,6 +24,14 @@
 
   - 完成时间：无
 
+- [text-input/010](domains/text-input/changes/010-change.md)：
+
+  - 变更目的：应用自动检查正式版本，安装版经确认后下载并安装更新，独立 EXE 提供人工下载入口。
+
+  - 创建时间：2026-10-03 23:59:28
+
+  - 完成时间：无
+
 - [text-input/011](domains/text-input/changes/011-change.md)：
 
   - 变更目的：发布检查与安装包构建并行执行，并复用默认分支的 Rust 依赖编译缓存，缩短版本标签的构建等待时间。

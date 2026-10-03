@@ -46,9 +46,20 @@
 .about-content a:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 .about-contact { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 10px 0 0; }
 .about-contact span { color: var(--muted); }
-.about-error, .about-version-error p { color: var(--error); margin: 8px 0 0; }
+.about-error, .about-version-error p { color: var(--error); margin: 8px 0 0; overflow-wrap: anywhere; }
 .about-version-error { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .about-version-error p { margin: 0; }
+.update-indicator { display: inline-block; width: 5px; height: 5px; background: var(--accent); margin-left: 5px; vertical-align: middle; }
+.update-section { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; border-top: 1px solid var(--line); padding-top: 10px; }
+.update-heading { display: flex; width: 100%; align-items: center; justify-content: space-between; gap: 8px; }
+.update-heading h3 { margin: 0; font-size: 13px; font-weight: 400; }
+.update-preference { display: flex; align-items: center; gap: 6px; font-size: 12px; }
+.update-preference input { width: 14px; height: 14px; margin: 0; accent-color: var(--accent); }
+.update-status, .update-hint, .update-confirmation p { margin: 0; font-size: 12px; line-height: 1.7; overflow-wrap: anywhere; }
+.update-hint { color: var(--muted); }
+.update-notes { margin: 0; max-height: 100px; width: 100%; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; font-size: 12px; }
+.update-section progress { width: 100%; height: 8px; accent-color: var(--accent); }
+.update-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; margin-top: 8px; }
 .about-legal { margin-top: auto; display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px 16px; color: var(--muted); font-size: 12px; }
 .text-button { border: 0; padding: 0; background: transparent; font-size: inherit; }
 .license-heading { display: flex; justify-content: space-between; align-items: center; gap: 12px; }

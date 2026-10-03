@@ -1,8 +1,8 @@
 import { test, expect, type Page } from '@playwright/test';
-import type { Snapshot, Draft } from '../../src/bridge';
+import type { Snapshot, Draft, UpdateSnapshot } from '../../src/bridge';
 
 declare global {
-  interface Window { relayTest: { state: Snapshot; push: (state: Partial<Snapshot>) => void; calls: string[]; openedUrls: string[]; draft?: Draft } }
+  interface Window { relayTest: { state: Snapshot; push: (state: Partial<Snapshot>) => void; calls: string[]; openedUrls: string[]; draft?: Draft; update: UpdateSnapshot; updatePush: (state: Partial<UpdateSnapshot>) => void } }
 }
 
 async function openApp(page: Page) {
@@ -12,7 +12,11 @@ async function openApp(page: Page) {
     let next = 1;
     let pinned = false;
     const state: Snapshot = { sequence: 1, phase: 'idle', sent: 0, total: 0, remainingSeconds: 0, message: '', settings: { delaySeconds: 5, intervalMs: 50, shortcut: 'F8' }, shortcutError: null };
-    window.relayTest = { state, calls: [], openedUrls: [], push: patch => {
+    const update: UpdateSnapshot = { sequence: 1, phase: 'idle', installed: true, autoCheck: true, version: null, notes: '', downloaded: 0, total: null, message: '' };
+    window.relayTest = { state, update, updatePush: patch => {
+      Object.assign(update, patch, { sequence: update.sequence + 1 });
+      for (const [id, event] of listeners) if (event === 'update-state') callbacks.get(id)?.({ event, id, payload: structuredClone(update) });
+    }, calls: [], openedUrls: [], push: patch => {
       Object.assign(state, patch, { sequence: state.sequence + 1 });
       for (const [id, event] of listeners) if (event === 'relay-state') callbacks.get(id)?.({ event, id, payload: structuredClone(state) });
     } };
@@ -23,6 +27,11 @@ async function openApp(page: Page) {
         unregisterCallback: (id: number) => callbacks.delete(id),
         invoke: async (command: string, args: Record<string, unknown>) => {
           window.relayTest.calls.push(command);
+          if (command === 'get_update_state') return structuredClone(update);
+          if (command === 'check_update') { window.relayTest.updatePush({ phase: 'available', version: '0.3.0', notes: '更新说明\n改善输入体验。' }); return structuredClone(update); }
+          if (command === 'download_update') { window.relayTest.updatePush({ phase: 'ready' }); return structuredClone(update); }
+          if (command === 'install_update') { window.relayTest.updatePush({ phase: 'ready', message: '任务结束后可安装更新。' }); return structuredClone(update); }
+          if (command === 'set_update_preference') { window.relayTest.updatePush({ autoCheck: args.autoCheck as boolean }); return structuredClone(update); }
           if (command === 'plugin:app|version') return '0.1.0';
           if (command === 'plugin:opener|open_url') { window.relayTest.openedUrls.push(args.url as string); return; }
           if (command === 'plugin:event|listen') { listeners.set(args.handler as number, args.event as string); return args.handler; }
@@ -46,6 +55,32 @@ async function openApp(page: Page) {
   await page.goto('/'); await page.waitForLoadState('networkidle');
   await expect(page.getByRole('button', { name: '开始输入' })).toBeEnabled();
 }
+
+test('update confirmation remains usable at 320px and preserves the editor after cancellation', async ({ page }) => {
+  await openApp(page);
+  await page.setViewportSize({ width: 320, height: 900 });
+  await page.locator('#source').fill('保留更新前文本');
+  const height = (await page.locator('.window').boundingBox())!.height;
+  await page.locator('#about-tab').click();
+  await page.getByRole('button', { name: '检查更新' }).click();
+  await expect(page.getByText('发现新版本 0.3.0')).toBeVisible();
+  expect(await page.evaluate(() => window.relayTest.calls.includes('download_update'))).toBe(false);
+  await page.getByRole('button', { name: '下载更新' }).click();
+  await page.getByRole('button', { name: '安装并重启', exact: true }).click();
+  await expect(page.getByText('重启后将清除编辑框中的全部文本，请先保存需要保留的内容。')).toBeVisible();
+  await page.locator('.window').screenshot({ path: 'test-results/update-confirmation-320.png' });
+  expect((await page.locator('.window').boundingBox())!.height).toBe(height);
+  expect(await page.locator('.about-content').evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true);
+  await page.getByRole('button', { name: '暂不安装' }).click();
+  expect(await page.evaluate(() => window.relayTest.calls.includes('install_update'))).toBe(false);
+  await page.locator('#input-tab').click();
+  await expect(page.locator('#source')).toHaveValue('保留更新前文本');
+  await page.evaluate(() => window.relayTest.updatePush({ phase: 'available', installed: false }));
+  await page.locator('#about-tab').click();
+  await expect(page.getByRole('button', { name: '下载更新' })).toHaveCount(0);
+  await page.getByRole('link', { name: '前往下载' }).click();
+  expect(await page.evaluate(() => window.relayTest.openedUrls.at(-1))).toBe('https://github.com/sunnyx11/key-relay/releases/latest');
+});
 
 test('native editor clear, undo, redo and subsequent editing', async ({ page }) => {
   await openApp(page);
@@ -126,8 +161,8 @@ test('about links, keyboard navigation and offline license retain the editor sta
   await page.locator('#input-tab').focus(); await page.keyboard.press('End');
   await expect(page.locator('#about-tab')).toBeFocused();
   await page.locator('.window').screenshot({ path: 'test-results/about-600.png' });
-  expect(await page.locator('.about-content').evaluate(el => el.scrollHeight <= el.clientHeight)).toBe(true);
-  await page.keyboard.press('Tab'); await expect(page.getByRole('link', { name: '项目主页' })).toBeFocused();
+  expect(await page.locator('.about-content').evaluate(el => el.scrollHeight > el.clientHeight)).toBe(true);
+  await page.keyboard.press('Tab'); await expect(page.getByRole('button', { name: '检查更新' })).toBeFocused();
   for (const name of ['项目主页', '使用说明', '问题反馈', 'hkhl888@foxmail.com']) await page.getByRole('link', { name }).click();
   expect(await page.evaluate(() => window.relayTest.openedUrls)).toEqual(['https://github.com/sunnyx11/key-relay', 'https://github.com/sunnyx11/key-relay#readme', 'https://github.com/sunnyx11/key-relay/issues', 'mailto:hkhl888@foxmail.com']);
   await page.context().setOffline(true);

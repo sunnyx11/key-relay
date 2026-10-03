@@ -149,7 +149,10 @@
 
 - 左侧展示 48×48px 应用图标，右侧为 18px、400 字重的 Key Relay 名称及 12px 中性灰版本信息。版本由 Tauri `getVersion` 读取，旁边显示“Windows 64 位”。
 - 用途说明为“将准备好的文本作为键盘输入发送到目标位置，适用于限制剪贴板粘贴的远程桌面会话。”正文和链接为 13px，窄窗口允许换行。
-- 用途说明与支持链接之间使用一条细分隔线。支持区依次展示项目主页、使用说明、问题反馈；下一行显示联系邮箱。
+- 用途说明之后展示应用更新区域，再以细分隔线分开支持链接。支持区依次展示项目主页、使用说明、问题反馈；下一行显示联系邮箱。
+- 更新区域包含检查按钮、自动检查开关、当前状态、更新说明及当前阶段操作。检查按钮沿用次级按钮，下载与安装使用主按钮。说明以纯文本显示，较长说明在 100px 高度内滚动。
+- 安装就绪后提供页内确认，提示重启清除文本，并提供“暂不安装”和“确认安装并重启”。离开关于页时取消确认。
+- 有新版本或安装就绪时，关于页签增加 5px 蓝色标记。更新事件保持当前页签及焦点，任务启动规则继续有效。
 - 外部链接通过 Tauri Opener 的 `openUrl` 交给系统默认应用。主窗口的 `opener:allow-open-url` 权限只允许下表地址。
 - 链接使用 `#326798`，悬停显示下划线，键盘焦点采用公共轮廓。版本读取和链接打开失败显示错误色提示，重试保留面板状态。
 - 底部显示 12px 中性灰版权文字“© 2026 sunnyx11”及 MIT 许可证按钮。许可证从仓库 `LICENSE` 打包完整文本，支持离线读取、换行和面板内滚动。
@@ -162,6 +165,7 @@
 | 使用说明 | `https://github.com/sunnyx11/key-relay#readme` |
 | 问题反馈 | `https://github.com/sunnyx11/key-relay/issues` |
 | 联系邮箱 | `mailto:hkhl888@foxmail.com` |
+| 更新下载 | `https://github.com/sunnyx11/key-relay/releases/latest` |
 
 #### 应用图标
 
@@ -176,6 +180,7 @@
 - 网页外部背景、居中留白、评审标签及下方演示区仅用于原型展示。
 - 原型图钉演示选中状态，窗口按钮控制页面内的折叠、宽度和显隐，标题双击切换展示宽度。Windows 系统置顶、拖动及窗口生命周期由桌面应用验证。
 - 原型关于页内嵌版本示例、应用 SVG 图标与 MIT 全文，项目链接由浏览器打开。元数据读取和系统链接调用的错误状态由桌面应用验证。
+- 原型通过固定数据演示安装版、独立 EXE、无更新、检查失败、签名失败和安装启动失败。模拟安装清除文本并保留当前页内设置，实际签名和安装由桌面验收验证。
 - 自定义标题栏高 28px，在所有宽度下展示 Key Relay 名称及图钉、最小化、最大化／还原、关闭按钮。名称左侧保留 14px 内边距，名称所在区域支持拖动。32×27px 的按钮区域与窗口拖动区域分开。
 - 四个窗口图标使用统一的 16×16 坐标和画布，线宽为 1px。最小化横线、最大化方框、关闭交叉线在画布内居中；图钉围绕画布中心旋转，针尖略长以保留辨识度。按钮内边距为零，图标居中。
 - 普通窗口图标使用中性灰，悬停时使用正文色；置顶选中保持蓝色，禁用采用禁用色，关闭按钮悬停时使用错误色背景和白色图标。
@@ -209,6 +214,34 @@
 前端先订阅事件，再查询快照；按序号接受更新。编辑同步、有效设置保存及按钮启动串行发送，按钮启动显式携带当前草稿。保存设置作用于后续任务，当前任务使用启动时的快照。文本只存储在进程内存。配置与空文本错误通过命令错误或独立提示反馈，保持任务阶段。
 
 Rust 任务线程串行处理命令、键鼠事件和计时。Windows 监听运行在拥有消息循环的独立线程，回调仅记录必要按键状态并发送事件。发送单元间的等待可被命令或中止事件唤醒。
+
+### 更新命令与安装互斥
+
+更新状态独立于输入任务快照，由 Rust 管理并按 `sequence` 排序。前端先订阅 `update-state`，再查询快照。自动检查计时属于更新发现，输入任务计时继续由 Rust 驱动。
+
+| 命令 | 输入 | 输出 |
+| --- | --- | --- |
+| `get_update_state` | 无 | 完整更新快照 |
+| `set_update_preference` | `{"autoCheck":false}` | 保存后的完整更新快照 |
+| `check_update` | 无 | 版本检查后的完整更新快照 |
+| `download_update` | 无 | 验签后的就绪状态或可重试错误状态 |
+| `install_update` | `{"confirmed":true}` | 安装启动失败或活动任务延后时的快照；成功接管时退出进程 |
+
+快照示例：
+
+```json
+{"sequence":3,"phase":"available","installed":true,"autoCheck":true,"version":"0.3.0","notes":"改善输入体验。","downloaded":0,"total":null,"message":""}
+```
+
+更新阶段为 `idle`、`checking`、`current`、`available`、`downloading`、`ready`、`installing`、`error`。下载失败返回 `available` 并显示原因；只有签名验证成功后才进入 `ready`。下载包字节与 Updater 实例保留在 Rust，前端只取得进度和元数据。
+
+- 更新清单地址固定为 GitHub 最新正式 Release 的 `latest.json`。清单和下载请求限定 HTTPS，检查超时 30 秒、下载超时 600 秒，进度事件最多约每 100 毫秒发送一次。
+- `scripts/package.mjs` 将构建变量 `TAURI_UPDATER_PUBLIC_KEY` 注入 Tauri 更新配置，CLI 和客户端使用同一公钥。签名及附件格式见[版本发布](../../release.md)。
+- 当前用户卸载项 `Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\Key Relay` 的 `InstallLocation` 与当前 EXE 规范化位置匹配时视为安装版。
+- 更新偏好保存在配置目录 `updates.json`，格式为 `{"autoCheck":true}`。解析失败时显示提示并关闭自动检查，显式设置后恢复保存。输入设置文件保持原结构。
+- 安装准备通过 `PrepareUpdate` 进入单任务线程。任务空闲且鼠标释放保护结束后设置安装保留状态，停止系统钩子并注销快捷键。`Engine::start` 对按钮与快捷键执行共同检查。
+- 前端安装操作先串行保存最近有效输入设置。安装期间关闭请求保持应用运行，直到安装程序接管或准备失败恢复。
+- Updater 使用 NSIS `passive` 模式与安装后重启。启动失败通过 `ResumeUpdate` 恢复钩子和快捷键，再释放安装保留状态；失败原因保留在更新区域。
 
 ## 状态变化与异常处理
 
@@ -264,6 +297,7 @@ Rust 任务线程串行处理命令、键鼠事件和计时。Windows 监听运�
 - [Tauri：从 Rust 通知前端](https://v2.tauri.app/develop/calling-frontend/)
 - [Tauri：全局快捷键插件](https://v2.tauri.app/plugin/global-shortcut/)
 - [Tauri：Opener 插件](https://v2.tauri.app/plugin/opener/)
+- [Tauri：Updater 插件](https://v2.tauri.app/plugin/updater/)
 - [Tauri：Windows 安装包](https://v2.tauri.app/distribute/windows-installer/)
 - [Microsoft：SendInput](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-sendinput)
 - [Microsoft：低级键盘监听](https://learn.microsoft.com/en-us/windows/win32/winmsg/lowlevelkeyboardproc)

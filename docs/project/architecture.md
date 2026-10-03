@@ -6,6 +6,8 @@
 
 - `src/components/`：自定义标题栏、输入面板、设置面板、关于面板和任务操作区。
 - `src/useRelay.ts`：编辑同步、命令调用及状态订阅。
+- `src/useUpdates.ts`、`src/components/UpdatePanel.tsx`：自动检查计时、更新状态及下载和安装确认。
+- `src-tauri/src/updates.rs`：更新偏好、安装版识别、签名下载与安装请求。
 - `src/bridge.ts`：Tauri 通信契约。
 - `src/styles/`：视觉变量、公共控件和布局。
 - `src-tauri/src/task.rs`：任务状态、快照、计时和取消。
@@ -55,7 +57,7 @@
 
 ## 集成与公共基础设施
 
-集成包括 Tauri 全局快捷键插件、Opener 插件及通过 `windows` crate 访问的 Windows 原生接口。Opener 负责关于页外部链接的系统默认应用调用，具体职责见[领域设计](../domains/text-input/design.md)。
+集成包括 Tauri 全局快捷键、Opener、Updater 插件，以及通过 `windows` crate 访问的 Windows 原生接口。`winreg` 只读当前用户的 NSIS 安装记录。Opener 负责关于页外部链接的系统默认应用调用，Updater 在 Rust 内请求 HTTPS 清单并验证安装包签名。具体职责见[领域设计](../domains/text-input/design.md)。
 
 ## 部署结构
 
@@ -67,6 +69,8 @@ CI 与发布配置分别执行前端检查、Rust 检查和 Release 编译。默
 
 发布配置将只读检查和构建任务与具有 `contents: write` 权限的草稿任务分开。草稿任务等待全部检查和构建成功。附件通过 Actions 产物传递，发布前再次验证 SHA-256。缓存规则、重试规则和验证范围见[版本发布](../release.md)。
 
-关于页外部链接权限限定于主窗口及设计文档列出的四个固定地址。版本取自应用元数据，完整 MIT 许可证随前端打包供离线读取。
+关于页外部链接权限限定于主窗口及设计文档列出的五个固定地址。版本取自应用元数据，完整 MIT 许可证随前端打包供离线读取。
+
+更新端点在 Rust 内固定，公钥由 `TAURI_UPDATER_PUBLIC_KEY` 构建变量嵌入。前端仅访问检查、偏好、下载和确认安装命令，安装包字节保存在 Rust 进程内。更新请求省略编辑文本。安装准备由任务线程串行执行，确认任务空闲后阻止两种启动入口，释放系统钩子和快捷键；安装启动失败时恢复资源后开放任务入口。
 
 模拟输入受 Windows 进程完整性级别限制。工具默认普通权限，本地 RDP 客户端以高权限运行时需要匹配权限。远程目标程序的权限由远程会话处理，具体约束见[领域设计](../domains/text-input/design.md#兼容与部署)。

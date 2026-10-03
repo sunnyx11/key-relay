@@ -15,6 +15,7 @@ export function useRelay() {
   const revision = useRef(Date.now());
   const draft = useRef<Draft>({ revision: revision.current, text: '', settings: defaults });
   const queue = useRef(Promise.resolve());
+  const validSettings = useRef<Settings>(defaults);
   const alive = useRef(true);
   const report = useCallback((error: unknown) => { if (alive.current) setNotice({ text: String(error), error: true }); }, []);
   const accept = useCallback((next: Snapshot) => {
@@ -39,7 +40,7 @@ export function useRelay() {
         unsubscribe = cleanup;
         const state = await bridge.snapshot();
         if (disposed) return;
-        accept(state); setSettings(state.settings);
+        accept(state); setSettings(state.settings); validSettings.current = state.settings;
         draft.current = { revision: ++revision.current, text: '', settings: state.settings };
         await bridge.sync(draft.current);
         if (!disposed) setReady(true);
@@ -60,6 +61,7 @@ export function useRelay() {
     setSettings(value); setNotice(null); sync(draft.current.text, value);
     const valid = Number.isInteger(value.delaySeconds) && Number(value.delaySeconds) >= 1 && Number(value.delaySeconds) <= 60 && Number.isInteger(value.intervalMs) && Number(value.intervalMs) >= 10 && Number(value.intervalMs) <= 1000;
     if (valid) {
+      validSettings.current = value as Settings;
       void enqueue(async () => { accept(await bridge.save(value as Settings)); }).catch(() => {});
     }
   };
@@ -74,5 +76,6 @@ export function useRelay() {
   const cancel = async () => {
     try { accept(await bridge.cancel()); } catch (error) { report(error); }
   };
-  return { snapshot, settings, text, ready, pending, notice, setNotice, updateText, updateSettings, start, cancel };
+  const flushSettings = () => enqueue(async () => { accept(await bridge.save(validSettings.current)); });
+  return { snapshot, settings, text, ready, pending, notice, setNotice, updateText, updateSettings, start, cancel, flushSettings };
 }

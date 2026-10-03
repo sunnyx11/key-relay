@@ -21,6 +21,13 @@ function fixture(t, version = '0.2.0') {
   return { root, files };
 }
 
+test('signed packaging requires both keys and embeds only the public key', async () => {
+  const { signingConfig } = await import('./package.mjs');
+  assert.throws(() => signingConfig({}), /PRIVATE_KEY/);
+  assert.throws(() => signingConfig({ TAURI_SIGNING_PRIVATE_KEY: 'private' }), /PUBLIC_KEY/);
+  assert.deepEqual(signingConfig({ TAURI_SIGNING_PRIVATE_KEY: 'private', TAURI_UPDATER_PUBLIC_KEY: ' public\n' }), { plugins: { updater: { pubkey: 'public' } } });
+});
+
 test('validates all version sources and extracts only the matching release notes', async t => {
   const { inspectRelease } = await import('./release.mjs');
   const { root } = fixture(t);
@@ -78,9 +85,14 @@ test('bundles the two current binaries, notes and exact SHA-256 sums', async t =
   mkdirSync(join(binaryRoot, 'bundle/nsis'), { recursive: true });
   writeFileSync(join(binaryRoot, 'key-relay.exe'), 'application');
   writeFileSync(join(binaryRoot, 'bundle/nsis/Key Relay_0.2.0_x64-setup.exe'), 'installer');
+  writeFileSync(join(binaryRoot, 'bundle/nsis/Key Relay_0.2.0_x64-setup.exe.sig'), 'signed-installer');
   writeFileSync(join(binaryRoot, 'bundle/nsis/Key Relay_0.1.0_x64-setup.exe'), 'old installer');
   const output = bundleRelease(root, 'v0.2.0');
-  assert.deepEqual(readdirSync(output).sort(), ['Key Relay_0.2.0_x64-setup.exe', 'SHA256SUMS.txt', 'key-relay.exe', 'release-notes.md'].sort());
+  assert.deepEqual(readdirSync(output).sort(), ['Key Relay_0.2.0_x64-setup.exe', 'Key Relay_0.2.0_x64-setup.exe.sig', 'latest.json', 'SHA256SUMS.txt', 'key-relay.exe', 'release-notes.md'].sort());
+  const manifest = JSON.parse(readFileSync(join(output, 'latest.json'), 'utf8'));
+  assert.equal(manifest.version, '0.2.0');
+  assert.equal(manifest.platforms['windows-x86_64'].signature, 'signed-installer');
+  assert.equal(manifest.platforms['windows-x86_64'].url, 'https://github.com/sunnyx11/key-relay/releases/download/v0.2.0/Key%20Relay_0.2.0_x64-setup.exe');
   for (const line of readFileSync(join(output, 'SHA256SUMS.txt'), 'utf8').trim().split('\n')) {
     const [hash, name] = line.split('  ');
     assert.equal(hash, createHash('sha256').update(readFileSync(join(output, name))).digest('hex'));

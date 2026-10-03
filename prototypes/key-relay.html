@@ -119,6 +119,17 @@
     .about-content a:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
     .about-contact { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 10px 0 0; }
     .about-contact span { color: var(--muted); }
+    .update-indicator { display: inline-block; width: 5px; height: 5px; background: var(--accent); margin-left: 5px; vertical-align: middle; }
+    .update-section { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; border-top: 1px solid var(--line); padding-top: 10px; }
+    .update-heading { display: flex; width: 100%; align-items: center; justify-content: space-between; gap: 8px; }
+    .update-heading h3 { margin: 0; font-size: 13px; font-weight: 400; }
+    .update-preference { display: flex; align-items: center; gap: 6px; font-size: 12px; }
+    .update-preference input { width: 14px; height: 14px; margin: 0; accent-color: var(--accent); }
+    .update-status, .update-hint, .update-confirmation p { margin: 0; font-size: 12px; line-height: 1.7; overflow-wrap: anywhere; }
+    .update-hint { color: var(--muted); }
+    .update-notes { margin: 0; max-height: 100px; width: 100%; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; font-size: 12px; }
+    .update-section progress { width: 100%; height: 8px; accent-color: var(--accent); }
+    .update-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; margin-top: 8px; }
     .about-legal { margin-top: auto; display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px 16px; color: var(--muted); font-size: 12px; }
     .text-button { border: 0; padding: 0; background: transparent; font-size: inherit; }
     .license-heading { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
@@ -194,9 +205,20 @@
                 <rect x="64" y="48" width="24" height="160" rx="6" fill="#326798"/>
                 <path d="M188 64 124 128 188 192" fill="none" stroke="#326798" stroke-width="24" stroke-linecap="round" stroke-linejoin="round"/>
               </svg>
-              <div><h2>Key Relay</h2><p class="about-version">版本 0.1.0 · Windows 64 位</p></div>
+              <div><h2>Key Relay</h2><p class="about-version">版本 0.2.0 · Windows 64 位</p></div>
             </div>
             <p class="about-description">将准备好的文本作为键盘输入发送到目标位置，<br>适用于限制剪贴板粘贴的远程桌面会话。</p>
+            <section class="update-section" aria-label="应用更新">
+              <div class="update-heading"><h3>应用更新</h3><button class="button" id="check-update">检查更新</button></div>
+              <label class="update-preference"><input type="checkbox" id="auto-check" checked>自动检查更新</label>
+              <p class="update-status" id="update-status" role="status">可检查新版本</p>
+              <pre class="update-notes" id="update-notes" aria-label="更新说明" hidden>示例版本 0.3.0\n改善输入体验与更新提示。</pre>
+              <progress id="update-progress" aria-label="下载进度" hidden></progress>
+              <p class="update-hint" id="portable-update" hidden>独立 EXE 需退出后手动替换。<a href="https://github.com/sunnyx11/key-relay/releases/latest" target="_blank" rel="noopener noreferrer">前往下载</a></p>
+              <button class="button primary" id="download-update" hidden>下载更新</button>
+              <button class="button primary" id="install-update" hidden>安装并重启</button>
+              <div class="update-confirmation" id="update-confirmation" hidden><p>重启后将清除编辑框中的全部文本，请先保存需要保留的内容。</p><div class="update-actions"><button class="button" id="cancel-update">暂不安装</button><button class="button primary" id="confirm-update">确认安装并重启</button></div></div>
+            </section>
             <div class="about-support">
               <nav aria-label="项目支持"><a href="https://github.com/sunnyx11/key-relay" target="_blank" rel="noopener noreferrer">项目主页</a><a href="https://github.com/sunnyx11/key-relay#readme" target="_blank" rel="noopener noreferrer">使用说明</a><a href="https://github.com/sunnyx11/key-relay/issues" target="_blank" rel="noopener noreferrer">问题反馈</a></nav>
               <p class="about-contact"><span>联系邮箱</span><a href="mailto:hkhl888@foxmail.com">hkhl888@foxmail.com</a></p>
@@ -239,7 +261,8 @@ SOFTWARE.
       <summary>原型演示</summary>
       <div class="preview-heading"><label for="target">测试输入框</label><button class="button" id="clear-target">清空结果</button></div>
       <textarea id="target" placeholder="点击开始后，在倒计时结束前点击这里。" spellcheck="false"></textarea>
-      <p class="preview-note">此区域用于演示交互，桌面软件界面为上方窗口。原型只向本页测试框写入文本，快捷键在本页生效；Enter、Tab 显示为文本。图钉仅演示选中状态，窗口按钮仅改变页面内展示；标题双击切换展示宽度，系统窗口拖动在桌面版本中验证。最小化或关闭后可通过上方按钮恢复演示。版本为静态示例，链接由浏览器及默认邮件应用处理。</p>
+      <label for="update-demo">更新演示</label><select id="update-demo"><option value="installed">安装版：发现新版本</option><option value="portable">独立 EXE：手动替换</option><option value="current">已是最新版本</option><option value="error">检查失败</option><option value="signature">签名验证失败</option><option value="install-error">安装启动失败</option></select>
+      <p class="preview-note">此区域用于演示交互，桌面软件界面为上方窗口。原型只向本页测试框写入文本，快捷键在本页生效；Enter、Tab 显示为文本。图钉仅演示选中状态，窗口按钮仅改变页面内展示；标题双击切换展示宽度，系统窗口拖动在桌面版本中验证。最小化或关闭后可通过上方按钮恢复演示。版本为静态示例，链接由浏览器及默认邮件应用处理。更新演示使用固定数据；确认安装模拟重启并清除编辑文本。</p></p>
     </details>
   </main>
   <script>
@@ -268,6 +291,53 @@ SOFTWARE.
       let interruptedKeys = false;
       let lastProgressTime = 0;
       const busy = () => ['countdown', 'arming', 'typing'].includes(state);
+      let updateState = 'idle';
+      let updateTimer;
+      const updateDemo = document.querySelector('#update-demo');
+      const checkUpdate = document.querySelector('#check-update');
+      const downloadUpdate = document.querySelector('#download-update');
+      const installUpdate = document.querySelector('#install-update');
+      const updateConfirmation = document.querySelector('#update-confirmation');
+      const autoCheck = document.querySelector('#auto-check');
+      function renderUpdate(phase, message = '') {
+        updateState = phase;
+        const portable = updateDemo.value === 'portable';
+        checkUpdate.disabled = ['checking', 'downloading', 'ready'].includes(phase);
+        autoCheck.disabled = ['checking', 'downloading'].includes(phase);
+        document.querySelector('#update-status').textContent = message || ({ idle: '可检查新版本', checking: '正在检查更新…', current: '当前已是最新版本', available: '发现新版本 0.3.0', downloading: '正在下载并验证更新…', ready: '版本 0.3.0 已准备好', error: '更新检查失败，请检查网络后重试。' })[phase];
+        document.querySelector('#portable-update').hidden = !portable;
+        document.querySelector('#update-notes').hidden = !['available', 'downloading', 'ready'].includes(phase);
+        document.querySelector('#update-progress').hidden = phase !== 'downloading';
+        downloadUpdate.hidden = portable || phase !== 'available';
+        installUpdate.hidden = portable || phase !== 'ready';
+        updateConfirmation.hidden = true;
+        tabs[2].querySelector('.update-indicator')?.remove();
+        if (['available', 'ready'].includes(phase)) {
+          const indicator = document.createElement('span'); indicator.className = 'update-indicator'; indicator.title = '有新版本'; indicator.setAttribute('aria-hidden', 'true'); tabs[2].append(indicator);
+        }
+      }
+      function checkForUpdate() {
+        if (['checking', 'downloading', 'ready'].includes(updateState)) return;
+        renderUpdate('checking');
+        updateTimer = setTimeout(() => renderUpdate(['current', 'error'].includes(updateDemo.value) ? updateDemo.value : 'available'), 400);
+      }
+      checkUpdate.addEventListener('click', checkForUpdate);
+      downloadUpdate.addEventListener('click', () => {
+        renderUpdate('downloading');
+        updateTimer = setTimeout(() => renderUpdate(updateDemo.value === 'signature' ? 'available' : 'ready', updateDemo.value === 'signature' ? '下载或签名验证失败，请重试。' : ''), 700);
+      });
+      installUpdate.addEventListener('click', () => { installUpdate.hidden = true; updateConfirmation.hidden = false; document.querySelector('#cancel-update').focus(); });
+      document.querySelector('#cancel-update').addEventListener('click', () => { renderUpdate('ready'); installUpdate.focus(); });
+      document.querySelector('#confirm-update').addEventListener('click', () => {
+        if (busy() || interactionBlocked) { renderUpdate('ready', '任务结束后可安装更新。'); return; }
+        if (updateDemo.value === 'install-error') { renderUpdate('ready', '安装启动失败，请重试。'); return; }
+        source.value = ''; updateCount(); setPinned(false); tabs[0].click();
+        document.querySelector('.about-version').textContent = '版本 0.3.0 · Windows 64 位';
+        renderUpdate('current');
+      });
+      updateDemo.addEventListener('change', () => { clearTimeout(updateTimer); renderUpdate('idle'); });
+      const startupCheck = setTimeout(() => { if (autoCheck.checked) checkForUpdate(); }, 10_000);
+      autoCheck.addEventListener('change', () => { if (!autoCheck.checked) clearTimeout(startupCheck); });
 
       function setStatus(next, heading, description) {
         state = next;
@@ -444,6 +514,7 @@ SOFTWARE.
       for (const tab of tabs) {
         tab.addEventListener('click', () => {
           if (tab.disabled) return;
+          if (tab !== tabs[2] && updateState === 'ready') renderUpdate('ready');
           const footer = document.querySelector('.footer');
           footer.style.visibility = tab === tabs[0] ? '' : 'hidden';
           footer.inert = tab !== tabs[0];

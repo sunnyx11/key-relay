@@ -1,7 +1,7 @@
 {
   "name": "key-relay",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
   "engines": { "node": ">=24" },
   "scripts": {
@@ -19,7 +19,7 @@
     "icons": "node scripts/generate-icons.mjs",
     "tauri": "tauri",
     "desktop": "tauri dev",
-    "package": "tauri build --bundles nsis",
+    "package": "node scripts/package.mjs",
     "specs": "node .agents/skills/spec-coding/scripts/update-specs.mjs --root . --specs-dir docs && node .agents/skills/spec-coding/scripts/check-specs.mjs --root . --specs-dir docs"
   },
   "dependencies": {

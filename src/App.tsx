@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { flushSync } from 'react-dom';
 import { getCurrentWindow, LogicalSize } from '@tauri-apps/api/window';
 import { useRelay } from './useRelay';
+import { useUpdates } from './useUpdates';
 import { TitleBar } from './components/TitleBar';
 import { InputPanel } from './components/InputPanel';
 import { SettingsPanel } from './components/SettingsPanel';
@@ -13,13 +14,15 @@ const tabs = [{ name: 'input', label: '输入' }, { name: 'settings', label: '�
 /** Compose the local editor window; native commands retain authoritative task state. */
 export default function App() {
   const relay = useRelay();
+  const updates = useUpdates();
+  const installing = updates.snapshot.phase === 'installing';
   const [tab, setTab] = useState<'input' | 'settings' | 'about'>('input');
   const sourceRef = useRef<HTMLTextAreaElement>(null);
   const containerRef = useRef<HTMLElement>(null);
   const active = ['arming', 'countdown', 'typing'].includes(relay.snapshot.phase);
-  const busy = active || !!relay.snapshot.interactionBlocked;
+  const busy = active || !!relay.snapshot.interactionBlocked || installing;
   const report = (error: unknown) => relay.setNotice({ text: String(error), error: true });
-  const tabDisabled = (name: typeof tab) => name === 'about' ? busy || relay.pending || !relay.ready : name === 'settings' && relay.snapshot.phase === 'countdown';
+  const tabDisabled = (name: typeof tab) => installing || (name === 'about' ? busy || relay.pending || !relay.ready : name === 'settings' && relay.snapshot.phase === 'countdown');
 
   useEffect(() => {
     if (active) setTab(current => current === 'about' ? 'input' : current);
@@ -99,12 +102,12 @@ export default function App() {
     <TitleBar disabled={busy || relay.pending || !relay.ready} onError={report} />
     <div className="workspace">
       <nav className="tabs" role="tablist" aria-label="功能页签">
-        {tabs.map(({ name, label }) => <button key={name} id={`${name}-tab`} className="tab" role="tab" aria-selected={tab === name} aria-controls={`${name}-panel`} tabIndex={tab === name ? 0 : -1} disabled={tabDisabled(name)} onClick={() => setTab(name)} onKeyDown={tabKey}>{label}</button>)}
+        {tabs.map(({ name, label }) => <button key={name} id={`${name}-tab`} className="tab" role="tab" aria-selected={tab === name} aria-controls={`${name}-panel`} tabIndex={tab === name ? 0 : -1} disabled={tabDisabled(name)} onClick={() => setTab(name)} onKeyDown={tabKey}>{label}{name === 'about' && ['available', 'ready'].includes(updates.snapshot.phase) && <span className="update-indicator" title="有新版本" aria-hidden="true" />}</button>)}
       </nav>
       <InputPanel hidden={tab !== 'input'} busy={busy || relay.pending || !relay.ready} text={relay.text} sourceRef={sourceRef} onInput={relay.updateText} />
       <SettingsPanel hidden={tab !== 'settings'} busy={busy || !relay.ready} settings={relay.settings} shortcutError={relay.snapshot.shortcutError} onChange={relay.updateSettings} />
-      <AboutPanel hidden={tab !== 'about'} />
+      <AboutPanel hidden={tab !== 'about'} updates={updates} beforeInstall={relay.flushSettings} />
     </div>
-    <TaskFooter hidden={tab !== 'input'} snapshot={relay.snapshot} settings={relay.settings} ready={relay.ready && !relay.snapshot.interactionBlocked} pending={relay.pending} notice={relay.notice} onStart={start} onClear={clear} />
+    <TaskFooter hidden={tab !== 'input'} snapshot={relay.snapshot} settings={relay.settings} ready={relay.ready && !relay.snapshot.interactionBlocked && !installing} pending={relay.pending} notice={relay.notice} onStart={start} onClear={clear} />
   </main>;
 }

@@ -24,3 +24,19 @@ export const bridge = {
   save: (settings: Settings) => invoke<Snapshot>('save_settings', { settings }),
   subscribe: (handler: (state: Snapshot) => void) => listen<Snapshot>('relay-state', event => handler(event.payload)),
 };
+
+/** Ordered update metadata; package bytes and signing keys stay in Rust. */
+export interface UpdateSnapshot {
+  sequence: number; phase: 'idle' | 'checking' | 'current' | 'available' | 'downloading' | 'ready' | 'installing' | 'error';
+  installed: boolean; autoCheck: boolean; version: string | null; notes: string;
+  downloaded: number; total: number | null; message: string;
+}
+/** Restricted commands use the official endpoint configured by the native build. */
+export const updateBridge = {
+  snapshot: () => invoke<UpdateSnapshot>('get_update_state'),
+  preference: (autoCheck: boolean) => invoke<UpdateSnapshot>('set_update_preference', { autoCheck }),
+  check: () => invoke<UpdateSnapshot>('check_update'),
+  download: () => invoke<UpdateSnapshot>('download_update'),
+  install: () => invoke<UpdateSnapshot>('install_update', { confirmed: true }),
+  subscribe: (handler: (state: UpdateSnapshot) => void) => listen<UpdateSnapshot>('update-state', event => handler(event.payload)),
+};
