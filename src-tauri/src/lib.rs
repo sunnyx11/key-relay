@@ -12,6 +12,7 @@ use tauri::Manager;
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
+        .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             let path = app.path().app_config_dir()?.join("settings.json");
             app.manage(commands::Runtime::spawn(app.handle().clone(), path));

@@ -4,7 +4,7 @@
 
 已确认的工程采用单前端应用和单 Rust crate，目录职责如下；实现验证状态见项目上下文。
 
-- `src/components/`：自定义标题栏、输入面板、设置面板和任务操作区。
+- `src/components/`：自定义标题栏、输入面板、设置面板、关于面板和任务操作区。
 - `src/useRelay.ts`：编辑同步、命令调用及状态订阅。
 - `src/bridge.ts`：Tauri 通信契约。
 - `src/styles/`：视觉变量、公共控件和布局。
@@ -50,12 +50,14 @@
 
 ## 集成与公共基础设施
 
-已选集成包括 Tauri 全局快捷键插件及通过 `windows` crate 访问的 Windows 原生接口，具体职责见[领域设计](../domains/text-input/design.md)。
+集成包括 Tauri 全局快捷键插件、Opener 插件及通过 `windows` crate 访问的 Windows 原生接口。Opener 负责关于页外部链接的系统默认应用调用，具体职责见[领域设计](../domains/text-input/design.md)。
 
 ## 部署结构
 
 已选应用形态为本地 Windows 桌面应用。React 构建产物由 WebView2 加载。NSIS 安装程序面向当前用户，缺少 WebView2 时联网安装。远程服务器通过 RDP 接收键盘事件，软件安装在本地。
 
 ## 鉴权与信任边界
+
+关于页外部链接权限限定于主窗口及设计文档列出的四个固定地址。版本取自应用元数据，完整 MIT 许可证随前端打包供离线读取。
 
 模拟输入受 Windows 进程完整性级别限制。工具默认普通权限，本地 RDP 客户端以高权限运行时需要匹配权限。远程目标程序的权限由远程会话处理，具体约束见[领域设计](../domains/text-input/design.md#兼容与部署)。

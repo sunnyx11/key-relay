@@ -3,5 +3,13 @@
   "identifier": "main-window",
   "description": "Local editor window controls",
   "windows": ["main"],
-  "permissions": ["core:default", "core:window:allow-start-dragging", "core:window:allow-minimize", "core:window:allow-toggle-maximize", "core:window:allow-is-maximized", "core:window:allow-close", "core:window:allow-show", "core:window:allow-set-size", "core:window:allow-set-always-on-top"]
+  "permissions": [
+    "core:default", "core:window:allow-start-dragging", "core:window:allow-minimize", "core:window:allow-toggle-maximize", "core:window:allow-is-maximized", "core:window:allow-close", "core:window:allow-show", "core:window:allow-set-size", "core:window:allow-set-always-on-top",
+    { "identifier": "opener:allow-open-url", "allow": [
+      { "url": "https://github.com/sunnyx11/key-relay" },
+      { "url": "https://github.com/sunnyx11/key-relay#readme" },
+      { "url": "https://github.com/sunnyx11/key-relay/issues" },
+      { "url": "mailto:hkhl888@foxmail.com" }
+    ] }
+  ]
 }

@@ -30,6 +30,7 @@ Spec 根目录为 `docs/`，导航入口为 `docs/index.md`。需求确认与兼
 | Rust | 输入任务、倒计时、发送间隔、中止判断及资源释放 |
 | Rust `windows` crate | 调用 Windows 原生输入与监听接口 |
 | `tauri-plugin-global-shortcut` | 全局快捷键注册与事件处理 |
+| `tauri-plugin-opener` | 关于页链接的系统浏览器与默认邮件应用调用 |
 | WebView2 | Windows 上的界面运行环境 |
 
 - 首版使用 React 自带状态管理，应用范围包含本地桌面界面和 Rust 原生逻辑。

@@ -2,7 +2,7 @@ import { test, expect, type Page } from '@playwright/test';
 import type { Snapshot, Draft } from '../../src/bridge';
 
 declare global {
-  interface Window { relayTest: { state: Snapshot; push: (state: Partial<Snapshot>) => void; calls: string[]; draft?: Draft } }
+  interface Window { relayTest: { state: Snapshot; push: (state: Partial<Snapshot>) => void; calls: string[]; openedUrls: string[]; draft?: Draft } }
 }
 
 async function openApp(page: Page) {
@@ -12,7 +12,7 @@ async function openApp(page: Page) {
     let next = 1;
     let pinned = false;
     const state: Snapshot = { sequence: 1, phase: 'idle', sent: 0, total: 0, remainingSeconds: 0, message: '', settings: { delaySeconds: 5, intervalMs: 50, shortcut: 'F8' }, shortcutError: null };
-    window.relayTest = { state, calls: [], push: patch => {
+    window.relayTest = { state, calls: [], openedUrls: [], push: patch => {
       Object.assign(state, patch, { sequence: state.sequence + 1 });
       for (const [id, event] of listeners) if (event === 'relay-state') callbacks.get(id)?.({ event, id, payload: structuredClone(state) });
     } };
@@ -23,6 +23,8 @@ async function openApp(page: Page) {
         unregisterCallback: (id: number) => callbacks.delete(id),
         invoke: async (command: string, args: Record<string, unknown>) => {
           window.relayTest.calls.push(command);
+          if (command === 'plugin:app|version') return '0.1.0';
+          if (command === 'plugin:opener|open_url') { window.relayTest.openedUrls.push(args.url as string); return; }
           if (command === 'plugin:event|listen') { listeners.set(args.handler as number, args.event as string); return args.handler; }
           if (command === 'plugin:event|unlisten') { listeners.delete(args.eventId as number); return; }
           if (command === 'plugin:window|is_always_on_top') return pinned;
@@ -96,6 +98,14 @@ test('layout matches widths, breakpoints, editor resizing and zoom', async ({ pa
       if (width <= 420) {
         expect(await page.locator('.setting-row').evaluateAll(rows => rows.every(row => row.children[1].getBoundingClientRect().top >= row.children[0].getBoundingClientRect().bottom))).toBe(true);
       }
+      await page.locator('#about-tab').click();
+      expect((await page.locator('.window').boundingBox())!.height).toBe(inputHeight);
+      await expect(page.getByText('版本 0.1.0 · Windows 64 位')).toBeVisible();
+      expect(await page.locator('.about-content').evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true);
+      await page.getByRole('button', { name: 'MIT 许可证' }).click();
+      expect((await page.locator('.window').boundingBox())!.height).toBe(inputHeight);
+      expect(await page.locator('.about-content').evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true);
+      await page.getByRole('button', { name: '返回关于' }).click();
       await page.locator('#input-tab').click();
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     }
@@ -105,6 +115,47 @@ test('layout matches widths, breakpoints, editor resizing and zoom', async ({ pa
   const before = (await page.locator('.window').boundingBox())!.height;
   await page.locator('#settings-tab').click(); expect((await page.locator('.window').boundingBox())!.height).toBe(before);
   await page.screenshot({ path: 'test-results/settings-150.png', fullPage: true });
+  await page.locator('#about-tab').click();
+  expect((await page.locator('.window').boundingBox())!.height).toBe(before);
+  await page.screenshot({ path: 'test-results/about-150.png', fullPage: true });
+});
+
+test('about links, keyboard navigation and offline license retain the editor state', async ({ page }) => {
+  await openApp(page); await page.setViewportSize({ width: 600, height: 600 });
+  await page.locator('#source').fill('保留文本');
+  await page.locator('#input-tab').focus(); await page.keyboard.press('End');
+  await expect(page.locator('#about-tab')).toBeFocused();
+  await page.locator('.window').screenshot({ path: 'test-results/about-600.png' });
+  expect(await page.locator('.about-content').evaluate(el => el.scrollHeight <= el.clientHeight)).toBe(true);
+  await page.keyboard.press('Tab'); await expect(page.getByRole('link', { name: '项目主页' })).toBeFocused();
+  for (const name of ['项目主页', '使用说明', '问题反馈', 'hkhl888@foxmail.com']) await page.getByRole('link', { name }).click();
+  expect(await page.evaluate(() => window.relayTest.openedUrls)).toEqual(['https://github.com/sunnyx11/key-relay', 'https://github.com/sunnyx11/key-relay#readme', 'https://github.com/sunnyx11/key-relay/issues', 'mailto:hkhl888@foxmail.com']);
+  await page.context().setOffline(true);
+  await page.getByRole('button', { name: 'MIT 许可证' }).click();
+  await expect(page.getByLabel('MIT 许可证全文')).toContainText('Permission is hereby granted');
+  await expect(page.getByRole('button', { name: '返回关于' })).toBeFocused();
+  await page.locator('.about-content').evaluate(el => { el.scrollTop = el.scrollHeight; });
+  await expect(page.getByLabel('MIT 许可证全文')).toContainText('SOFTWARE.');
+  await page.getByRole('button', { name: '返回关于' }).click();
+  await expect(page.getByRole('button', { name: 'MIT 许可证' })).toBeFocused();
+  await page.locator('#about-tab').focus(); await page.keyboard.press('Home');
+  await expect(page.locator('#source')).toHaveValue('保留文本');
+  await page.keyboard.press('Tab'); await expect(page.locator('#source')).toBeFocused();
+});
+
+test('about tab protects the stop gesture and task start returns to input', async ({ page }) => {
+  await openApp(page); await page.locator('#source').fill('preserve');
+  await page.locator('#about-tab').click();
+  await page.evaluate(() => window.relayTest.push({ phase: 'arming' }));
+  await expect(page.locator('#input-tab')).toHaveAttribute('aria-selected', 'true');
+  await expect(page.locator('#about-tab')).toBeDisabled();
+  const box = (await page.locator('#about-tab').boundingBox())!;
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2); await page.mouse.down();
+  await page.evaluate(() => window.relayTest.push({ phase: 'stopped' }));
+  await page.mouse.up();
+  await expect(page.locator('#input-tab')).toHaveAttribute('aria-selected', 'true');
+  await page.locator('#about-tab').click();
+  await expect(page.locator('#about-tab')).toHaveAttribute('aria-selected', 'true');
 });
 
 test('task states preserve typography and footer positions', async ({ page }) => {

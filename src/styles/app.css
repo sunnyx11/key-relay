@@ -31,6 +31,29 @@
 .setting-copy p { margin: 2px 0 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
 .setting-error { grid-column: 1 / -1; margin: 0; color: var(--error); font-size: 12px; }
 .setting-note { margin: 16px 0 0; padding-top: 10px; border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; line-height: 1.7; }
+.about-panel { position: relative; }
+.about-content { position: absolute; inset: 12px 0 0; overflow: auto; padding: 3px; display: flex; flex-direction: column; gap: 14px; font-size: 13px; scrollbar-gutter: stable; }
+.about-content > * { flex-shrink: 0; }
+.about-heading { display: flex; align-items: center; gap: 12px; }
+.about-heading img { flex-shrink: 0; }
+.about-heading h2 { margin: 0; font-size: 18px; font-weight: 400; line-height: 1.4; }
+.about-version { margin: 3px 0 0; font-size: 12px; color: var(--muted); }
+.about-description { margin: 0; line-height: 1.7; }
+.about-support { border-top: 1px solid var(--line); padding-top: 12px; }
+.about-support nav { display: flex; flex-wrap: wrap; gap: 8px 22px; }
+.about-content a, .text-button { color: var(--accent); text-decoration: none; overflow-wrap: anywhere; }
+.about-content a:hover, .text-button:hover { text-decoration: underline; }
+.about-content a:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.about-contact { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 10px 0 0; }
+.about-contact span { color: var(--muted); }
+.about-error, .about-version-error p { color: var(--error); margin: 8px 0 0; }
+.about-version-error { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.about-version-error p { margin: 0; }
+.about-legal { margin-top: auto; display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px 16px; color: var(--muted); font-size: 12px; }
+.text-button { border: 0; padding: 0; background: transparent; font-size: inherit; }
+.license-heading { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.license-heading h2 { font-size: 14px; font-weight: 400; margin: 0; }
+.license-text { margin: 0; font: inherit; font-size: 12px; line-height: 1.7; white-space: pre-wrap; overflow-wrap: anywhere; }
 @container (max-width: 560px) { .footer { align-items: stretch; flex-direction: column; gap: 8px; } .footer-actions { align-self: flex-end; } }
 @media (max-width: 520px) {
   :root { --control-width: 144px; }

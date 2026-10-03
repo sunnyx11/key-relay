@@ -5,16 +5,25 @@ import { useRelay } from './useRelay';
 import { TitleBar } from './components/TitleBar';
 import { InputPanel } from './components/InputPanel';
 import { SettingsPanel } from './components/SettingsPanel';
+import { AboutPanel } from './components/AboutPanel';
 import { TaskFooter } from './components/TaskFooter';
+
+const tabs = [{ name: 'input', label: '输入' }, { name: 'settings', label: '设置' }, { name: 'about', label: '关于' }] as const;
 
 /** Compose the local editor window; native commands retain authoritative task state. */
 export default function App() {
   const relay = useRelay();
-  const [tab, setTab] = useState<'input' | 'settings'>('input');
+  const [tab, setTab] = useState<'input' | 'settings' | 'about'>('input');
   const sourceRef = useRef<HTMLTextAreaElement>(null);
   const containerRef = useRef<HTMLElement>(null);
-  const busy = ['arming', 'countdown', 'typing'].includes(relay.snapshot.phase) || !!relay.snapshot.interactionBlocked;
+  const active = ['arming', 'countdown', 'typing'].includes(relay.snapshot.phase);
+  const busy = active || !!relay.snapshot.interactionBlocked;
   const report = (error: unknown) => relay.setNotice({ text: String(error), error: true });
+  const tabDisabled = (name: typeof tab) => name === 'about' ? busy || relay.pending || !relay.ready : name === 'settings' && relay.snapshot.phase === 'countdown';
+
+  useEffect(() => {
+    if (active) setTab(current => current === 'about' ? 'input' : current);
+  }, [active]);
 
   useEffect(() => {
     let suppressed: Element | null = null;
@@ -81,18 +90,20 @@ export default function App() {
   const tabKey = (event: KeyboardEvent<HTMLButtonElement>) => {
     if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
     event.preventDefault();
-    const next = event.key === 'Home' ? 'input' : event.key === 'End' ? 'settings' : tab === 'input' ? 'settings' : 'input';
-    if (next === 'settings' && relay.snapshot.phase === 'countdown') return;
+    const available = tabs.filter(item => !tabDisabled(item.name));
+    const index = available.findIndex(item => item.name === tab);
+    const next = available[event.key === 'Home' ? 0 : event.key === 'End' ? available.length - 1 : (index + (event.key === 'ArrowRight' ? 1 : -1) + available.length) % available.length].name;
     setTab(next); document.getElementById(`${next}-tab`)?.focus();
   };
   return <main className="window" ref={containerRef}>
     <TitleBar disabled={busy || relay.pending || !relay.ready} onError={report} />
     <div className="workspace">
       <nav className="tabs" role="tablist" aria-label="功能页签">
-        {(['input', 'settings'] as const).map(name => <button key={name} id={`${name}-tab`} className="tab" role="tab" aria-selected={tab === name} aria-controls={`${name}-panel`} tabIndex={tab === name ? 0 : -1} disabled={name === 'settings' && relay.snapshot.phase === 'countdown'} onClick={() => setTab(name)} onKeyDown={tabKey}>{name === 'input' ? '输入' : '设置'}</button>)}
+        {tabs.map(({ name, label }) => <button key={name} id={`${name}-tab`} className="tab" role="tab" aria-selected={tab === name} aria-controls={`${name}-panel`} tabIndex={tab === name ? 0 : -1} disabled={tabDisabled(name)} onClick={() => setTab(name)} onKeyDown={tabKey}>{label}</button>)}
       </nav>
       <InputPanel hidden={tab !== 'input'} busy={busy || relay.pending || !relay.ready} text={relay.text} sourceRef={sourceRef} onInput={relay.updateText} />
       <SettingsPanel hidden={tab !== 'settings'} busy={busy || !relay.ready} settings={relay.settings} shortcutError={relay.snapshot.shortcutError} onChange={relay.updateSettings} />
+      <AboutPanel hidden={tab !== 'about'} />
     </div>
     <TaskFooter hidden={tab !== 'input'} snapshot={relay.snapshot} settings={relay.settings} ready={relay.ready && !relay.snapshot.interactionBlocked} pending={relay.pending} notice={relay.notice} onStart={start} onClear={clear} />
   </main>;

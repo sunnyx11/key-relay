@@ -1,6 +1,7 @@
 import { test, expect, chromium } from '@playwright/test';
 import { execFileSync, spawn } from 'node:child_process';
 import { resolve } from 'node:path';
+import config from '../../src-tauri/tauri.conf.json' with { type: 'json' };
 
 for (const session of ['first', 'reopened']) {
 test(`packaged WebView2 window, pin and cleanup (${session} session)`, async () => {
@@ -17,6 +18,23 @@ test(`packaged WebView2 window, pin and cleanup (${session} session)`, async () 
     page.on('pageerror', error => errors.push(error.message));
     await expect(page.locator('#start')).toBeEnabled();
     await expect.poll(() => page.evaluate(() => Math.abs(innerHeight - Math.max(360, document.querySelector('.window')!.getBoundingClientRect().height)))).toBeLessThan(2);
+    const originalHeight = await page.evaluate(() => innerHeight);
+    await page.locator('#about-tab').click();
+    await expect(page.getByText(`版本 ${config.version} · Windows 64 位`)).toBeVisible();
+    await expect(page.getByRole('link', { name: 'hkhl888@foxmail.com' })).toHaveAttribute('href', 'mailto:hkhl888@foxmail.com');
+    expect(await page.evaluate(() => innerHeight)).toBe(originalHeight);
+    await page.screenshot({ path: 'test-results/native-about.png' });
+    await page.getByRole('button', { name: 'MIT 许可证' }).click();
+    await expect(page.getByLabel('MIT 许可证全文')).toContainText('Copyright (c) 2026 sunnyx11');
+    expect(await page.evaluate(() => innerHeight)).toBe(originalHeight);
+    await page.getByRole('button', { name: '返回关于' }).click();
+    const forbidden = await page.evaluate(async () => {
+      const runtime = window as unknown as { __TAURI_INTERNALS__: { invoke: (command: string, args: unknown) => Promise<void> } };
+      try { await runtime.__TAURI_INTERNALS__.invoke('plugin:opener|open_url', { url: 'https://example.com' }); return ''; }
+      catch (error) { return String(error); }
+    });
+    expect(forbidden).toContain('Not allowed to open url https://example.com');
+    await page.locator('#input-tab').click();
     const pin = page.getByRole('button', { name: '置顶窗口' });
     await expect(pin).toHaveAttribute('aria-pressed', 'false');
     await pin.click();
@@ -43,6 +61,7 @@ test(`packaged WebView2 window, pin and cleanup (${session} session)`, async () 
     await page.locator('#start').click();
     await expect(page.locator('#start')).toContainText('取消输入');
     await expect(page.locator('#settings-tab')).toBeDisabled();
+    await expect(page.locator('#about-tab')).toBeDisabled();
     await expect(pin).toBeDisabled();
     await page.locator('#start').click();
     await expect(page.locator('#status-message')).toContainText('已取消');

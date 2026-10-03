@@ -1,7 +1,13 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import App from './App';
+import { getVersion } from '@tauri-apps/api/app';
+import { openUrl } from '@tauri-apps/plugin-opener';
+import license from '../LICENSE?raw';
 import { bridge, defaults, type Snapshot } from './bridge';
+
+vi.mock('@tauri-apps/api/app', () => ({ getVersion: vi.fn() }));
+vi.mock('@tauri-apps/plugin-opener', () => ({ openUrl: vi.fn() }));
 
 vi.mock('./bridge', async importOriginal => {
   const original = await importOriginal<typeof import('./bridge')>();
@@ -14,6 +20,8 @@ vi.mock('@tauri-apps/api/window', () => ({ getCurrentWindow: () => ({ ...pinWind
 const initial: Snapshot = { sequence: 1, phase: 'idle', sent: 0, total: 0, remainingSeconds: 0, message: '', settings: defaults, shortcutError: null };
 let notify: (state: Snapshot) => void;
 beforeEach(() => {
+  vi.mocked(getVersion).mockResolvedValue('1.2.3');
+  vi.mocked(openUrl).mockResolvedValue();
   sizingWindow.setSize.mockResolvedValue(undefined);
   sizingWindow.isMaximized.mockResolvedValue(false);
   let pinned = false;
@@ -32,6 +40,76 @@ async function mount() {
   await waitFor(() => expect(screen.getByRole('button', { name: '开始输入' })).toBeEnabled());
 }
 describe('editor and native task integration', () => {
+  it('shows runtime version, contact links and the bundled license while preserving the draft', async () => {
+    await mount();
+    fireEvent.input(screen.getByRole('textbox'), { target: { value: '保留文本' } });
+    fireEvent.click(screen.getByRole('tab', { name: '关于' }));
+    await waitFor(() => expect(screen.getByText('版本 1.2.3 · Windows 64 位')).toBeVisible());
+    expect(screen.getByText('© 2026 sunnyx11')).toBeVisible();
+    for (const [name, url] of [
+      ['项目主页', 'https://github.com/sunnyx11/key-relay'],
+      ['使用说明', 'https://github.com/sunnyx11/key-relay#readme'],
+      ['问题反馈', 'https://github.com/sunnyx11/key-relay/issues'],
+      ['hkhl888@foxmail.com', 'mailto:hkhl888@foxmail.com'],
+    ]) {
+      const link = screen.getByRole('link', { name });
+      expect(link).toHaveAttribute('href', url);
+      fireEvent.click(link);
+      await waitFor(() => expect(openUrl).toHaveBeenLastCalledWith(url));
+    }
+    fireEvent.click(screen.getByRole('button', { name: 'MIT 许可证' }));
+    expect(screen.getByLabelText('MIT 许可证全文').textContent).toBe(license);
+    expect(screen.getByRole('button', { name: '返回关于' })).toHaveFocus();
+    fireEvent.click(screen.getByRole('button', { name: '返回关于' }));
+    expect(screen.getByRole('button', { name: 'MIT 许可证' })).toHaveFocus();
+    fireEvent.click(screen.getByRole('tab', { name: '输入' }));
+    expect(screen.getByRole('textbox')).toHaveValue('保留文本');
+  });
+  it('reports version and opener failures in the about panel and supports retry', async () => {
+    vi.mocked(getVersion).mockRejectedValueOnce(new Error('metadata unavailable'));
+    await mount(); fireEvent.click(screen.getByRole('tab', { name: '关于' }));
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('读取版本失败'));
+    fireEvent.click(screen.getByRole('button', { name: '重试读取版本' }));
+    await waitFor(() => expect(screen.getByText('版本 1.2.3 · Windows 64 位')).toBeVisible());
+    vi.mocked(openUrl).mockRejectedValueOnce(new Error('no handler'));
+    fireEvent.click(screen.getByRole('link', { name: 'hkhl888@foxmail.com' }));
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('打开失败'));
+    fireEvent.click(screen.getByRole('link', { name: 'hkhl888@foxmail.com' }));
+    await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument());
+  });
+  it('navigates three tabs and returns from about when a native task starts', async () => {
+    await mount();
+    const input = screen.getByRole('tab', { name: '输入' });
+    const settings = screen.getByRole('tab', { name: '设置' });
+    const about = screen.getByRole('tab', { name: '关于' });
+    fireEvent.keyDown(input, { key: 'ArrowRight' }); expect(settings).toHaveFocus();
+    fireEvent.keyDown(settings, { key: 'ArrowRight' }); expect(about).toHaveFocus();
+    fireEvent.keyDown(about, { key: 'ArrowRight' }); expect(input).toHaveFocus();
+    fireEvent.keyDown(input, { key: 'ArrowLeft' }); expect(about).toHaveFocus();
+    fireEvent.keyDown(about, { key: 'Home' }); expect(input).toHaveFocus();
+    fireEvent.keyDown(input, { key: 'End' }); expect(about).toHaveFocus();
+    act(() => notify({ ...initial, sequence: 2, phase: 'arming' }));
+    expect(input).toHaveAttribute('aria-selected', 'true');
+    expect(about).toBeDisabled();
+    fireEvent.keyDown(input, { key: 'End' }); expect(settings).toHaveFocus();
+    act(() => notify({ ...initial, sequence: 3, phase: 'countdown' }));
+    fireEvent.keyDown(input, { key: 'End' }); expect(input).toHaveFocus();
+    expect(about).toBeDisabled();
+    act(() => notify({ ...initial, sequence: 4, phase: 'typing' }));
+    expect(about).toBeDisabled();
+    fireEvent.pointerDown(about);
+    act(() => notify({ ...initial, sequence: 5, phase: 'stopped' }));
+    fireEvent.click(about, { detail: 1 });
+    expect(about).toHaveAttribute('aria-selected', 'false');
+    fireEvent.click(about); expect(about).toHaveAttribute('aria-selected', 'true');
+    act(() => notify({ ...initial, sequence: 6, phase: 'typing' }));
+    expect(input).toHaveAttribute('aria-selected', 'true');
+    act(() => notify({ ...initial, sequence: 7, phase: 'stopped', interactionBlocked: true }));
+    expect(about).toBeDisabled();
+    act(() => notify({ ...initial, sequence: 8, phase: 'stopped', interactionBlocked: false }));
+    expect(about).toBeEnabled();
+    expect(input).toHaveAttribute('aria-selected', 'true');
+  });
   it('applies content shrinkage received during a native resize', async () => {
     const rect = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({ height: 410 } as DOMRect);
     let resized: ResizeObserverCallback = () => {};
