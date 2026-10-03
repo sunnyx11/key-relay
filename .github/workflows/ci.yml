@@ -1,23 +1,22 @@
-name: Release draft
+name: CI
 
 on:
   push:
-    tags:
-      - 'v*'
+    branches:
+      - main
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: release-${{ github.ref }}
-  cancel-in-progress: false
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   frontend:
     runs-on: windows-2022
     timeout-minutes: 15
-    env:
-      RELEASE_TAG: ${{ github.ref_name }}
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
@@ -26,8 +25,6 @@ jobs:
         with:
           node-version: '24'
           cache: npm
-      - name: Validate version and changelog
-        run: node scripts/release.mjs check "$env:RELEASE_TAG"
       - name: Install frontend dependencies
         run: npm ci
       - name: Check frontend and release scripts
@@ -69,7 +66,7 @@ jobs:
           workspaces: src-tauri -> target
           shared-key: windows-2022-check-v1
           cache-bin: false
-          save-if: false
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: Check Rust
         run: |
           cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
@@ -84,7 +81,6 @@ jobs:
     runs-on: windows-2022
     timeout-minutes: 60
     env:
-      RELEASE_TAG: ${{ github.ref_name }}
       CARGO_TERM_COLOR: always
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
@@ -94,8 +90,6 @@ jobs:
         with:
           node-version: '24'
           cache: npm
-      - name: Validate version and changelog
-        run: node scripts/release.mjs check "$env:RELEASE_TAG"
       - name: Install frontend dependencies
         run: npm ci
       - name: Install Rust
@@ -108,44 +102,11 @@ jobs:
           workspaces: src-tauri -> target
           shared-key: windows-2022-release-v1
           cache-bin: false
-          save-if: false
-      - name: Build Windows installer and prepare attachments
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: Build release application
+        env:
+          TAURI_UPDATER_PUBLIC_KEY: ${{ vars.TAURI_UPDATER_PUBLIC_KEY }}
         run: |
-          npm.cmd run package -- -- --locked
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          npm run release:bundle -- "$env:RELEASE_TAG"
+          npm.cmd run tauri -- build --no-bundle -- --locked
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           git diff --exit-code -- package-lock.json src-tauri/Cargo.lock
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          name: release-${{ github.ref_name }}
-          path: src-tauri/target/release-assets/${{ github.ref_name }}/
-          if-no-files-found: error
-          retention-days: 14
-
-  draft:
-    needs: [frontend, rust, build]
-    runs-on: ubuntu-24.04
-    timeout-minutes: 10
-    permissions:
-      contents: write
-    env:
-      RELEASE_TAG: ${{ github.ref_name }}
-    steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
-        with:
-          persist-credentials: false
-      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
-        with:
-          name: release-${{ github.ref_name }}
-          path: release-assets
-      - name: Create or update draft
-        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          script: |
-            const { pathToFileURL } = require('node:url');
-            const { join } = require('node:path');
-            const { publishDraft } = await import(pathToFileURL(join(process.env.GITHUB_WORKSPACE, 'scripts/publish-release.mjs')).href);
-            const url = await publishDraft(github, context.repo, process.env.RELEASE_TAG, join(process.env.GITHUB_WORKSPACE, 'release-assets'));
-            core.info(`Draft ready for manual review: ${url}`);

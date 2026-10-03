@@ -8,14 +8,36 @@
 
 ## 构建与附件
 
-构建任务使用 Windows Server 2022 x64、Node.js 24、Rust 1.91.1 和锁文件中的依赖，npm 下载使用缓存。任务依次执行：
+构建与检查任务使用 Windows Server 2022 x64、Node.js 24、Rust 1.91.1 和锁文件中的依赖。标签触发三个并行任务：
 
-1. 检查标签、项目版本和 CHANGELOG.md。
-2. 运行代码检查、组件测试、发布脚本测试、Rust 格式检查、Clippy 和 Rust 测试。
-3. 生成并检查规范索引，确认索引与仓库内容一致。
-4. 安装 Playwright Chromium 并运行浏览器测试。
-5. 构建 NSIS 安装包，准备附件与 SHA-256 校验文件。
-6. 将产物传给独立发布任务，创建或更新同标签的 Release 草稿。
+| 任务 | 职责 |
+| --- | --- |
+| `frontend` | 校验标签、版本和更新说明；运行代码检查、组件测试、发布脚本测试、规范索引检查及浏览器测试 |
+| `rust` | 运行 Rust 格式检查、Clippy 和常规 Rust 测试，检查 Cargo 锁文件保持一致 |
+| `build` | 校验标签、版本和更新说明；构建 NSIS 安装包，准备附件与 SHA-256 校验文件，检查锁文件保持一致 |
+
+浏览器测试只安装 Chromium Headless Shell。`draft` 等待三个任务全部成功后，下载构建附件并创建或更新同标签的 Release 草稿。任一任务失败或取消时，草稿任务跳过。
+
+### 默认分支 CI 与缓存
+
+`.github/workflows/ci.yml` 在 `main` 推送时运行，也支持 Actions 手动执行。前端检查、Rust 检查和 Release 编译分别执行。Release 编译使用以下命令生成前端资源与优化后的应用：
+
+```powershell
+npm.cmd run tauri -- build --no-bundle -- --locked
+```
+
+该命令省去安装包生成及签名，CI 无需签名私钥。CI 仅验证编译并准备缓存，发布附件来自标签构建。
+
+- npm 下载缓存由默认分支任务准备，标签任务可以恢复。
+- Rust 缓存使用固定提交的 `Swatinem/rust-cache`。工作区为 `src-tauri -> target`，缓存 Cargo 依赖和依赖编译产物。
+- Rust 检查使用 `windows-2022-check-v1`，Release 编译使用 `windows-2022-release-v1`。CI 与发布的用途、运行环境和工具链一致。
+- 缓存 Action 在共享键中加入工具链、编译环境和依赖配置，依赖变化时可恢复已有依赖缓存。应用自身和增量编译产物按 Action 默认规则排除。
+- 仅默认分支成功任务保存 Rust 缓存，标签任务只恢复。不同标签的缓存相互隔离，标签可恢复默认分支缓存。
+- 缓存命中后仍执行完整检查和构建；缓存缺失时重新下载依赖并编译。
+
+版本发布前等待 `main` CI 的 Rust 检查和 Release 编译成功，可使标签任务使用已有缓存。首次 CI、工具链变化、依赖变化或缓存过期时，编译耗时可能增加。缓存命中和耗时以 Actions 日志为依据。
+
+### 发布附件
 
 每个 Release 提供三个附件：
 
@@ -31,7 +53,7 @@
 
 ## 仓库设置
 
-- 仓库允许 GitHub Actions 运行，以及配置中引用的官方 Actions。
+- 仓库允许 GitHub Actions 运行，以及配置中引用的 Actions，包括 `Swatinem/rust-cache`。
 - 构建任务使用 `contents: read`。发布任务单独申请 `contents: write`，通过自动提供的 GITHUB_TOKEN 操作 Release。
 - 组织或仓库策略应允许发布任务获得该权限；无需配置个人访问令牌。
 - Actions 按提交 SHA 固定。发布任务执行标签所指提交中的脚本，标签推送权限应授予维护者。
@@ -83,7 +105,7 @@
    ```
 
 5. 完成常规检查，提交并推送版本调整，然后为该提交创建附注标签并推送该标签。提交、标签和推送分别执行仓库约定的确认步骤。
-6. 在 GitHub Actions 检查该标签的两个任务，随后进入 Releases 查看草稿。
+6. 在 GitHub Actions 确认 `frontend`、`rust`、`build` 和 `draft` 四个任务成功，随后进入 Releases 查看草稿。
 
 仅含 Unreleased 时，发布校验会提示缺少版本条目并停止。校验命令和本地打包命令均不会创建标签或调用 GitHub。
 
@@ -105,7 +127,7 @@ Get-FileHash 'src-tauri/target/release-assets/v0.2.0/Key Relay_0.2.0_x64-setup.e
 
 ## 草稿检查与公开
 
-- 确认两个 Actions 任务均成功，三个附件齐全，校验值正确。
+- 确认四个 Actions 任务均成功，三个附件齐全，校验值正确。
 - 确认标签、软件关于页和安装包版本一致。
 - 检查更新说明中的功能、兼容性和已知限制。
 - 试装并验证启动、图标、基本输入与退出；检查独立 EXE 启动。
@@ -123,3 +145,5 @@ Get-FileHash 'src-tauri/target/release-assets/v0.2.0/Key Relay_0.2.0_x64-setup.e
 ## 验证状态
 
 本地验证覆盖发布脚本、草稿接口调用契约、Actions 静态配置和 Windows 构建。GitHub 托管环境的实际构建、令牌权限与 Release 草稿上传需要首次推送版本标签后验证。
+
+CI 与并行发布配置已通过本地 Actions 静态检查，发布脚本测试和 Headless Shell 浏览器测试通过。Tauri `--no-bundle` 命令在本地 stable 工具链下完成 Release 编译并跳过安装包与签名。Rust 1.91.1 的 CI 执行、默认分支缓存保存、标签缓存恢复、检查失败时跳过草稿及实际耗时需要 GitHub 托管环境验证。Change 011 保持 `accepted`。

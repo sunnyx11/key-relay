@@ -24,6 +24,14 @@
 
   - 完成时间：无
 
+- [text-input/011](domains/text-input/changes/011-change.md)：
+
+  - 变更目的：发布检查与安装包构建并行执行，并复用默认分支的 Rust 依赖编译缓存，缩短版本标签的构建等待时间。
+
+  - 创建时间：2026-10-04 00:24:28
+
+  - 完成时间：无
+
 ## completed
 
 - [text-input/001](domains/text-input/changes/001-change.md)：
