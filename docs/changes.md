@@ -16,6 +16,14 @@
 
   - 完成时间：无
 
+- [text-input/009](domains/text-input/changes/009-change.md)：
+
+  - 变更目的：界面采用直角控件和蓝色主按钮，通过统一标题栏底色与增加少量底部留白表达紧凑桌面工具的操作层级。
+
+  - 创建时间：2026-10-03 21:17:27
+
+  - 完成时间：无
+
 ## completed
 
 - [text-input/001](domains/text-input/changes/001-change.md)：

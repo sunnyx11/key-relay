@@ -1,5 +1,5 @@
 .window { container-type: inline-size; width: 100%; border: 1px solid var(--line); background: var(--surface); }
-.titlebar { height: 28px; display: flex; align-items: center; background: var(--paper); border-bottom: 1px solid var(--line); user-select: none; }
+.titlebar { height: 28px; display: flex; align-items: center; background: var(--surface); border-bottom: 1px solid var(--line); user-select: none; }
 .title-drag { display: flex; align-items: center; padding: 0 14px; flex: 1; min-width: 0; height: 100%; }
 .app-name { font-size: 12px; font-weight: 400; line-height: 20px; color: var(--title-text); white-space: nowrap; }
 .window-error { margin: 0; padding: 6px 14px; font-size: 12px; color: var(--error); }
@@ -15,7 +15,7 @@
 #source { flex-grow: 1; height: 184px; min-height: 130px; }
 .editor-meta { display: flex; justify-content: space-between; gap: 8px; color: var(--muted); margin-top: 6px; font-size: 12px; }
 #text-count { white-space: nowrap; }
-.footer { padding: 6px 14px 4px; display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.footer { padding: 6px 14px 8px; display: flex; align-items: center; justify-content: space-between; gap: 16px; }
 #status-message { display: flex; align-items: center; margin: 0; flex: 1; min-width: 0; min-height: 3.4em; color: var(--muted); font-size: 13px; font-weight: 400; line-height: 1.7; overflow-wrap: anywhere; }
 #status-message:is([data-state="countdown"], [data-state="arming"], [data-state="typing"]) { color: var(--accent); }
 #status-message[data-state="done"] { color: var(--success); }
@@ -58,7 +58,7 @@
 @media (max-width: 520px) {
   :root { --control-width: 144px; }
   .workspace { padding: 8px 12px 0; } .editor-meta { flex-wrap: wrap; }
-  .footer { padding: 6px 12px 4px; }
+  .footer { padding: 6px 12px 8px; }
   .setting-row { column-gap: 12px; }
 }
 @media (max-width: 420px) { .setting-row { grid-template-columns: minmax(0, 1fr); row-gap: 6px; } }

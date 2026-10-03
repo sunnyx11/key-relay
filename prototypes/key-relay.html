@@ -18,6 +18,8 @@
       --control-line: #aaa;
       --accent: #326798;
       --accent-surface: #e5eff8;
+      --primary-hover: #2b5b88;
+      --primary-active: #244e75;
       --title-text: #5c5c5c;
       --button-text: #505050;
       --button-line: #bdbdbd;
@@ -32,8 +34,7 @@
       color: var(--text);
       font: 14px/1.5 "Microsoft YaHei UI", "Microsoft YaHei", sans-serif;
     }
-    button, input, select, textarea { font: inherit; color: inherit; }
-    button, input, select { border-radius: 2px; }
+    button, input, select, textarea { font: inherit; color: inherit; border-radius: 0; }
     button { cursor: pointer; }
     button:disabled { cursor: default; color: #858585; }
     button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible, summary:focus-visible {
@@ -46,14 +47,14 @@
     .window.minimized > :not(.titlebar) { display: none !important; }
     .review-label { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 0 0 8px; color: var(--muted); font-size: 12px; }
     .window { container-type: inline-size; border: 1px solid var(--line); background: var(--surface); box-shadow: 0 3px 14px #00000008; }
-    .titlebar { height: 28px; display: flex; align-items: center; background: var(--paper); border-bottom: 1px solid var(--line); user-select: none; }
+    .titlebar { height: 28px; display: flex; align-items: center; background: var(--surface); border-bottom: 1px solid var(--line); user-select: none; }
     .title-drag { display: flex; align-items: center; padding: 0 14px; flex: 1; min-width: 0; height: 100%; }
     .app-name { font-size: 12px; font-weight: 400; line-height: 20px; color: var(--title-text); white-space: nowrap; }
     .window-actions { display: flex; flex-shrink: 0; }
     .caption-button { width: 32px; height: 27px; padding: 0; border: 0; border-radius: 0; color: var(--muted); background: transparent; display: grid; place-items: center; }
     .caption-button svg { width: 16px; height: 16px; stroke: currentColor; stroke-width: 1; stroke-linecap: round; stroke-linejoin: round; fill: none; }
     .caption-button:focus-visible { outline-offset: -3px; }
-    .caption-button:hover:enabled { background: #f1f1f1; color: var(--text); }
+    .caption-button:hover:enabled { background: #e9e9e9; color: var(--text); }
     .caption-button:active:enabled { background: #e8e8e8; }
     .caption-button.pin[aria-pressed="true"] { background: var(--accent-surface); color: var(--accent); }
     .caption-button.pin:disabled { color: #858585; }
@@ -69,20 +70,24 @@
     .footer-actions { display: flex; flex: 0 0 auto; align-items: center; gap: 6px; }
     .start-slot { display: flex; justify-content: flex-end; width: 172px; }
     textarea { display: block; width: 100%; border: 1px solid var(--control-line); border-radius: 0; background: var(--paper); padding: 9px 10px; line-height: 1.8; resize: vertical; }
+    #source:focus-visible, #shortcut:focus-visible { outline-offset: -2px; }
     textarea::placeholder { color: var(--placeholder); }
     #source { flex-grow: 1; height: 184px; min-height: 130px; }
     textarea[readonly] { background: #fafafa; }
     .editor-meta { display: flex; justify-content: space-between; gap: 8px; color: var(--muted); margin-top: 6px; font-size: 12px; }
     #text-count { white-space: nowrap; }
     input[type="number"] { height: 30px; width: 66px; padding: 2px 7px; border: 1px solid var(--control-line); background: var(--paper); }
-    .footer { padding: 6px 14px 4px; display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+    .footer { padding: 6px 14px 8px; display: flex; align-items: center; justify-content: space-between; gap: 16px; }
     #status-message { display: flex; align-items: center; margin: 0; flex: 1; min-width: 0; min-height: 3.4em; color: var(--muted); font-size: 13px; font-weight: 400; line-height: 1.7; overflow-wrap: anywhere; }
     #status-message:is([data-state="countdown"], [data-state="arming"], [data-state="typing"]) { color: var(--accent); }
     #status-message[data-state="done"] { color: var(--success); }
     #status-message[data-state="error"] { color: var(--error); }
-    .button { min-height: 26px; padding: 2px 8px; border: 1px solid var(--button-line); border-radius: 3px; font-size: 13px; color: var(--button-text); background: #fafafa; white-space: nowrap; }
+    .button { min-height: 26px; padding: 2px 8px; border: 1px solid var(--button-line); font-size: 13px; color: var(--button-text); background: #fafafa; white-space: nowrap; }
     .button:hover:enabled { color: var(--text); background: #f1f1f1; border-color: #929292; }
     .button:active:enabled { background: #e8e8e8; }
+    .button.primary:enabled { color: var(--paper); background: var(--accent); border-color: var(--accent); }
+    .button.primary:hover:enabled { background: var(--primary-hover); border-color: var(--primary-hover); }
+    .button.primary:active:enabled { background: var(--primary-active); border-color: var(--primary-active); }
     .primary { min-width: 72px; flex: 0 0 auto; }
     .settings-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
     .settings-heading h2 { margin: 0; font-size: 14px; font-weight: 400; }
@@ -92,8 +97,8 @@
     .setting-row + .setting-row { margin-top: 14px; }
     .setting-copy label { display: block; font-size: 13px; }
     .setting-copy p { margin: 2px 0 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
-    .setting-value { display: flex; align-items: center; height: 30px; border: 1px solid var(--control-line); border-radius: 2px; background: var(--paper); }
-    .setting-value:focus-within { outline: 2px solid var(--focus); outline-offset: 2px; }
+    .setting-value { display: flex; align-items: center; height: 30px; border: 1px solid var(--control-line); background: var(--paper); }
+    .setting-value:focus-within { outline: 2px solid var(--focus); outline-offset: -2px; }
     .setting-value input { width: 100%; min-width: 0; height: 28px; border: 0; background: transparent; outline: none; }
     .setting-value span { padding: 0 9px 0 4px; flex: 0 0 auto; color: var(--muted); font-size: 12px; }
     .setting-value:has(input:disabled) { background: #f5f5f5; }
@@ -132,7 +137,7 @@
       .stage { width: calc(100% - 20px); margin-top: 16px; }
       .workspace { padding: 8px 12px 0; }
       .editor-meta { flex-wrap: wrap; }
-      .footer { padding: 6px 12px 4px; }
+      .footer { padding: 6px 12px 8px; }
       .setting-row { grid-template-columns: minmax(0, 1fr) 144px; column-gap: 12px; }
     }
     @media (max-width: 420px) {
