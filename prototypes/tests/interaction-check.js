@@ -17,6 +17,111 @@ async page => {
     await page.locator('#target').click();
   };
   const cases = [
+    ['Caption matches the desktop geometry and previews window actions', async () => {
+      check((await page.locator('.titlebar').boundingBox()).height === 28, 'Caption height must be 28px');
+      check(await page.locator('.caption-button').count() === 4, 'Four window controls required');
+      const appearance = await page.locator('.app-name').evaluate(el => {
+        const style = getComputedStyle(el);
+        return [style.fontSize, style.fontWeight, style.lineHeight];
+      });
+      check(JSON.stringify(appearance) === JSON.stringify(['12px', '400', '20px']), 'Caption typography differs from desktop');
+      const pin = page.getByRole('button', { name: '置顶窗口', exact: true });
+      await pin.click();
+      check(await page.locator('.pin').getAttribute('aria-pressed') === 'true', 'Pin did not activate');
+      await page.getByRole('button', { name: '最小化', exact: true }).click();
+      check(!await page.locator('.workspace').isVisible(), 'Minimize preview still shows content');
+      await page.locator('#restore-window').click();
+      check(await page.locator('.pin').getAttribute('aria-pressed') === 'true', 'Restore lost pin state');
+      const normal = await page.locator('.window').boundingBox();
+      await page.getByRole('button', { name: '最大化或还原', exact: true }).click();
+      check((await page.locator('.window').boundingBox()).width > normal.width, 'Maximize preview did not expand');
+      await page.locator('.title-drag').dblclick();
+      check((await page.locator('.window').boundingBox()).width === normal.width, 'Caption double click did not restore');
+      await page.getByRole('button', { name: '关闭', exact: true }).click();
+      check(!await page.locator('.window').isVisible(), 'Close preview still visible');
+      await page.locator('#restore-window').click();
+      check(await page.locator('.pin').getAttribute('aria-pressed') === 'false', 'Reopening must reset pin');
+    }],
+    ['About supports three-tab navigation, fixed links and offline license', async () => {
+      check(await page.getByRole('tab').count() === 3, 'About tab missing');
+      await page.locator('#source').fill('保留文本');
+      await page.locator('#input-tab').focus();
+      await page.keyboard.press('End');
+      check(await page.locator('#about-tab').getAttribute('aria-selected') === 'true', 'End must select About');
+      check(await page.locator('.about-version').textContent() === '版本 0.1.0 · Windows 64 位', 'Version metadata differs');
+      const links = await page.locator('#about-panel a').evaluateAll(items => items.map(item => item.getAttribute('href')));
+      check(JSON.stringify(links) === JSON.stringify(['https://github.com/sunnyx11/key-relay', 'https://github.com/sunnyx11/key-relay#readme', 'https://github.com/sunnyx11/key-relay/issues', 'mailto:hkhl888@foxmail.com']), 'Support links differ');
+      check(await page.locator('#input-panel').evaluate(el => el.inert), 'Hidden input remains interactive');
+      check(await page.locator('.footer').evaluate(el => el.inert), 'Hidden footer remains interactive');
+      await page.locator('#show-license').click();
+      check((await page.locator('.license-text').textContent()).includes('THE SOFTWARE IS PROVIDED "AS IS"'), 'Offline license is incomplete');
+      check(await page.locator('#back-about').evaluate(el => el === document.activeElement), 'License entry focus missing');
+      await page.locator('#back-about').click();
+      check(await page.locator('#show-license').evaluate(el => el === document.activeElement), 'License return focus missing');
+      await page.locator('#about-tab').focus();
+      await page.keyboard.press('ArrowRight');
+      check(await page.locator('#input-tab').getAttribute('aria-selected') === 'true', 'Right must wrap to input');
+      await page.keyboard.press('ArrowLeft');
+      check(await page.locator('#about-tab').getAttribute('aria-selected') === 'true', 'Left must wrap to About');
+      await page.keyboard.press('Home');
+      check(await page.locator('#source').inputValue() === '保留文本', 'About changed source');
+    }],
+    ['About and pin honor countdown and the interrupting pointer gesture', async () => {
+      check(await page.locator('#about-tab').count() === 1, 'About tab missing');
+      await page.locator('#source').fill('abcdef'.repeat(100));
+      await page.locator('#start').click();
+      check(await page.locator('#about-tab').isDisabled(), 'About enabled during countdown');
+      check(await page.locator('.pin').isDisabled(), 'Pin enabled during countdown');
+      await page.keyboard.press('Escape');
+      for (const selector of ['#about-tab', '.pin']) {
+        await page.locator('#about-tab').click();
+        await target();
+        await page.keyboard.down('Control');
+        await page.keyboard.down('Alt');
+        await page.keyboard.down('F8');
+        check(await page.locator('#input-tab').getAttribute('aria-selected') === 'true', 'Task start must show input');
+        check(await page.locator('#target').evaluate(el => el === document.activeElement), 'Task start stole target focus');
+        await page.keyboard.up('F8');
+        await page.keyboard.up('Alt');
+        await page.keyboard.up('Control');
+        await waitState('typing');
+        const box = await page.locator(selector).boundingBox();
+        await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+        await page.mouse.down();
+        check(await state() === 'stopped', 'Pointer did not stop sending');
+        check(await page.locator(selector).isDisabled(), 'Control enabled before interrupting mouse release');
+        await page.mouse.up();
+        check(await page.locator('#input-tab').getAttribute('aria-selected') === 'true', 'Interrupting gesture switched to About');
+        check(await page.locator('.pin').getAttribute('aria-pressed') === 'false', 'Interrupting gesture pinned window');
+      }
+      await page.locator('.pin').click();
+      check(await page.locator('.pin').getAttribute('aria-pressed') === 'true', 'Separate pin click failed');
+    }],
+    ['All panels and the license retain height at narrow widths and zoom', async () => {
+      check(await page.locator('#about-tab').count() === 1, 'About tab missing');
+      for (const width of [1180, 560, 390, 320]) {
+        await page.setViewportSize({ width, height: 1200 });
+        for (const height of [184, 320]) {
+          await page.locator('#input-tab').click();
+          await page.locator('#source').evaluate((el, value) => { el.style.height = value + 'px'; }, height);
+          const input = await page.locator('.window').boundingBox();
+          for (const tab of ['settings', 'about']) {
+            await page.locator(`#${tab}-tab`).click();
+            check((await page.locator('.window').boundingBox()).height === input.height, tab + ' changed window height');
+          }
+          await page.locator('#show-license').click();
+          check((await page.locator('.window').boundingBox()).height === input.height, 'License changed window height');
+          check(await page.locator('#license-view').evaluate(el => el.scrollHeight > el.clientHeight), 'License must scroll internally');
+          await page.locator('#back-about').click();
+          check(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'Horizontal overflow');
+        }
+      }
+      await page.setViewportSize({ width: 1952, height: 1216 });
+      await page.evaluate(() => { document.body.style.zoom = '1.5'; });
+      const about = await page.locator('.window').boundingBox();
+      await page.locator('#input-tab').click();
+      check((await page.locator('.window').boundingBox()).height === about.height, 'Zoom changed panel height');
+    }],
     ['Interrupting on disabled Clear preserves source', async () => {
       const text = 'abcdefghijklmnopqrstuvwxyz'.repeat(10);
       await page.locator('#source').fill(text);

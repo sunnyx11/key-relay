@@ -17,6 +17,10 @@
       --line: #d4d4d4;
       --control-line: #aaa;
       --accent: #326798;
+      --accent-surface: #e5eff8;
+      --title-text: #5c5c5c;
+      --button-text: #505050;
+      --button-line: #bdbdbd;
       --success: #287044;
       --error: #a13d32;
       --focus: #3977ad;
@@ -26,7 +30,7 @@
       margin: 0;
       background: var(--desktop);
       color: var(--text);
-      font: 14px/1.5 "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", sans-serif;
+      font: 14px/1.5 "Microsoft YaHei UI", "Microsoft YaHei", sans-serif;
     }
     button, input, select, textarea { font: inherit; color: inherit; }
     button, input, select { border-radius: 2px; }
@@ -38,13 +42,23 @@
     }
     [hidden] { display: none !important; }
     .stage { width: min(600px, calc(100% - 32px)); margin: 28px auto 24px; }
-    .review-label { display: flex; justify-content: space-between; margin: 0 0 8px; color: var(--muted); font-size: 12px; }
-    .window { container-type: inline-size; border: 1px solid #b9b9b9; background: var(--surface); box-shadow: 0 3px 14px #00000008; }
-    .titlebar { height: 36px; padding: 0 14px; display: flex; align-items: center; gap: 8px; background: var(--paper); border-bottom: 1px solid #e4e4e4; }
-    .app-icon { width: 20px; height: 20px; color: #4a4a4a; }
-    .app-name { font-size: 14px; font-weight: 600; }
-    .app-description { margin-left: auto; color: #777; font-size: 12px; }
-    .workspace { display: grid; grid-template-columns: minmax(0, 1fr); padding: 10px 14px 0; }
+    .stage.maximized { width: calc(100% - 20px); }
+    .window.minimized > :not(.titlebar) { display: none !important; }
+    .review-label { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 0 0 8px; color: var(--muted); font-size: 12px; }
+    .window { container-type: inline-size; border: 1px solid var(--line); background: var(--surface); box-shadow: 0 3px 14px #00000008; }
+    .titlebar { height: 28px; display: flex; align-items: center; background: var(--paper); border-bottom: 1px solid var(--line); user-select: none; }
+    .title-drag { display: flex; align-items: center; padding: 0 14px; flex: 1; min-width: 0; height: 100%; }
+    .app-name { font-size: 12px; font-weight: 400; line-height: 20px; color: var(--title-text); white-space: nowrap; }
+    .window-actions { display: flex; flex-shrink: 0; }
+    .caption-button { width: 32px; height: 27px; padding: 0; border: 0; border-radius: 0; color: var(--muted); background: transparent; display: grid; place-items: center; }
+    .caption-button svg { width: 16px; height: 16px; stroke: currentColor; stroke-width: 1; stroke-linecap: round; stroke-linejoin: round; fill: none; }
+    .caption-button:focus-visible { outline-offset: -3px; }
+    .caption-button:hover:enabled { background: #f1f1f1; color: var(--text); }
+    .caption-button:active:enabled { background: #e8e8e8; }
+    .caption-button.pin[aria-pressed="true"] { background: var(--accent-surface); color: var(--accent); }
+    .caption-button.pin:disabled { color: #858585; }
+    .caption-button.close:hover:enabled { background: var(--error); color: var(--paper); }
+    .workspace { display: grid; grid-template-columns: minmax(0, 1fr); padding: 8px 14px 0; }
     .tabs { display: flex; align-items: end; height: 29px; border-bottom: 1px solid var(--line); }
     .tab { height: 28px; min-width: 64px; padding: 3px 15px; border: 1px solid transparent; border-bottom: 0; background: transparent; position: relative; color: var(--muted); }
     .tab[aria-selected="true"] { background: var(--surface); border-color: var(--line); color: var(--text); top: 1px; height: 29px; }
@@ -59,15 +73,16 @@
     #source { flex-grow: 1; height: 184px; min-height: 130px; }
     textarea[readonly] { background: #fafafa; }
     .editor-meta { display: flex; justify-content: space-between; gap: 8px; color: var(--muted); margin-top: 6px; font-size: 12px; }
+    #text-count { white-space: nowrap; }
     input[type="number"] { height: 30px; width: 66px; padding: 2px 7px; border: 1px solid var(--control-line); background: var(--paper); }
-    .footer { padding: 10px 14px 14px; display: flex; align-items: center; justify-content: space-between; gap: 16px; }
-    #status-message { display: flex; align-items: center; margin: 0; flex: 1; min-width: 0; min-height: 3.4em; color: var(--muted); font-size: 13px; line-height: 1.7; }
+    .footer { padding: 6px 14px 4px; display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+    #status-message { display: flex; align-items: center; margin: 0; flex: 1; min-width: 0; min-height: 3.4em; color: var(--muted); font-size: 13px; font-weight: 400; line-height: 1.7; overflow-wrap: anywhere; }
     #status-message:is([data-state="countdown"], [data-state="arming"], [data-state="typing"]) { color: var(--accent); }
     #status-message[data-state="done"] { color: var(--success); }
     #status-message[data-state="error"] { color: var(--error); }
-    .button { min-height: 26px; padding: 2px 8px; border: 1px solid #b4b4b4; border-radius: 3px; font-size: 13px; background: #fafafa; box-shadow: 0 1px 1px #00000006; white-space: nowrap; }
-    .button:hover:enabled { background: #f1f1f1; border-color: #929292; }
-    .button:active:enabled { background: #e8e8e8; box-shadow: none; }
+    .button { min-height: 26px; padding: 2px 8px; border: 1px solid var(--button-line); border-radius: 3px; font-size: 13px; color: var(--button-text); background: #fafafa; white-space: nowrap; }
+    .button:hover:enabled { color: var(--text); background: #f1f1f1; border-color: #929292; }
+    .button:active:enabled { background: #e8e8e8; }
     .primary { min-width: 72px; flex: 0 0 auto; }
     .settings-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
     .settings-heading h2 { margin: 0; font-size: 14px; font-weight: 400; }
@@ -84,6 +99,26 @@
     .setting-value:has(input:disabled) { background: #f5f5f5; }
     select { width: 100%; height: 30px; padding: 2px 24px 2px 8px; border: 1px solid var(--control-line); background: #fafafa; }
     .setting-note { margin: 16px 0 0; padding-top: 10px; border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; line-height: 1.7; }
+    .about-panel { position: relative; }
+    .about-content { position: absolute; inset: 12px 0 0; overflow: auto; padding: 3px; display: flex; flex-direction: column; gap: 14px; font-size: 13px; scrollbar-gutter: stable; }
+    .about-content > * { flex-shrink: 0; }
+    .about-heading { display: flex; align-items: center; gap: 12px; }
+    .about-icon { flex-shrink: 0; }
+    .about-heading h2 { margin: 0; font-size: 18px; font-weight: 400; line-height: 1.4; }
+    .about-version { margin: 3px 0 0; font-size: 12px; color: var(--muted); }
+    .about-description { margin: 0; line-height: 1.7; }
+    .about-support { border-top: 1px solid var(--line); padding-top: 12px; }
+    .about-support nav { display: flex; flex-wrap: wrap; gap: 8px 22px; }
+    .about-content a, .text-button { color: var(--accent); text-decoration: none; overflow-wrap: anywhere; }
+    .about-content a:hover, .text-button:hover { text-decoration: underline; }
+    .about-content a:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+    .about-contact { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 10px 0 0; }
+    .about-contact span { color: var(--muted); }
+    .about-legal { margin-top: auto; display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px 16px; color: var(--muted); font-size: 12px; }
+    .text-button { border: 0; padding: 0; background: transparent; font-size: inherit; }
+    .license-heading { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+    .license-heading h2 { font-size: 14px; font-weight: 400; margin: 0; }
+    .license-text { margin: 0; font: inherit; font-size: 12px; line-height: 1.7; white-space: pre-wrap; overflow-wrap: anywhere; }
     .preview { margin-top: 14px; color: var(--muted); font-size: 12px; }
     .preview > summary { cursor: pointer; padding: 0 0 10px; user-select: none; }
     .preview-heading { display: flex; align-items: center; justify-content: space-between; margin: 0 0 8px; }
@@ -95,10 +130,9 @@
     }
     @media (max-width: 520px) {
       .stage { width: calc(100% - 20px); margin-top: 16px; }
-      .workspace { padding: 10px 12px 0; }
+      .workspace { padding: 8px 12px 0; }
       .editor-meta { flex-wrap: wrap; }
-      .footer { padding: 10px 12px 12px; }
-      .app-description { display: none; }
+      .footer { padding: 6px 12px 4px; }
       .setting-row { grid-template-columns: minmax(0, 1fr) 144px; column-gap: 12px; }
     }
     @media (max-width: 420px) {
@@ -108,23 +142,28 @@
 </head>
 <body>
   <main class="stage">
-    <div class="review-label"><span>界面原型 / 待评审</span><span>浅色 · 紧凑布局</span></div>
+    <div class="review-label"><span>界面原型 · 浏览器演示</span><button class="button" id="restore-window" hidden>恢复窗口</button><span>浅色 · 紧凑布局</span></div>
     <section class="window" aria-label="Key Relay 文本自动输入">
       <header class="titlebar">
-        <svg class="app-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true"><rect x="2" y="5" width="20" height="14" rx="1"/><path d="M5 9h2m2 0h2m2 0h2m2 0h2M5 12h2m2 0h2m2 0h2m2 0h2M6 16h12"/></svg>
-        <span class="app-name">Key Relay</span>
-        <span class="app-description">文本自动输入</span>
+        <div class="title-drag"><span class="app-name">Key Relay</span></div>
+        <div class="window-actions">
+          <button class="caption-button pin" aria-label="置顶窗口" title="置顶窗口" aria-pressed="false"><svg viewBox="0 0 16 16" aria-hidden="true"><g transform="rotate(35 8 8)"><path d="M5 2.5h6M6 2.5v5l-2 3h8l-2-3v-5M8 10.5v3"/></g></svg></button>
+          <button class="caption-button" id="minimize" aria-label="最小化"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 8h9"/></svg></button>
+          <button class="caption-button" id="maximize" aria-label="最大化或还原"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="3.5" y="3.5" width="9" height="9"/></svg></button>
+          <button class="caption-button close" aria-label="关闭"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4 4 8 8m0-8-8 8"/></svg></button>
+        </div>
       </header>
       <div class="workspace">
         <nav class="tabs" role="tablist" aria-label="功能页签">
           <button class="tab" id="input-tab" role="tab" aria-selected="true" aria-controls="input-panel">输入</button>
           <button class="tab" id="settings-tab" role="tab" aria-selected="false" aria-controls="settings-panel" tabindex="-1">设置</button>
+          <button class="tab" id="about-tab" role="tab" aria-selected="false" aria-controls="about-panel" tabindex="-1">关于</button>
         </nav>
         <section class="panel" id="input-panel" role="tabpanel" aria-labelledby="input-tab">
           <textarea id="source" spellcheck="false" placeholder="在此输入或粘贴文本…" aria-label="待输入文本" aria-describedby="text-count text-note"></textarea>
           <div class="editor-meta"><span id="text-count">0 个字符</span><span id="text-note">保留空格与换行</span></div>
         </section>
-        <section class="panel" id="settings-panel" role="tabpanel" aria-labelledby="settings-tab" hidden>
+        <section class="panel" id="settings-panel" role="tabpanel" aria-labelledby="settings-tab" hidden inert>
           <div class="settings-heading"><h2>输入设置</h2><button class="button" id="restore">恢复默认</button></div>
           <div class="setting-row">
             <div class="setting-copy"><label for="delay">等待时间</label><p id="delay-note">按钮启动前等待 1～60 秒</p></div>
@@ -142,6 +181,49 @@
           </div>
           <p class="setting-note">输入期间，鼠标移动继续；鼠标按下或键盘按键停止。</p>
         </section>
+        <section class="panel about-panel" id="about-panel" role="tabpanel" aria-labelledby="about-tab" hidden inert>
+          <div class="about-content" id="about-overview">
+            <div class="about-heading">
+              <svg class="about-icon" xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 256 256" aria-hidden="true">
+                <rect x="8" y="8" width="240" height="240" rx="56" fill="#f1f4f7"/>
+                <rect x="64" y="48" width="24" height="160" rx="6" fill="#326798"/>
+                <path d="M188 64 124 128 188 192" fill="none" stroke="#326798" stroke-width="24" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+              <div><h2>Key Relay</h2><p class="about-version">版本 0.1.0 · Windows 64 位</p></div>
+            </div>
+            <p class="about-description">将准备好的文本作为键盘输入发送到目标位置，<br>适用于限制剪贴板粘贴的远程桌面会话。</p>
+            <div class="about-support">
+              <nav aria-label="项目支持"><a href="https://github.com/sunnyx11/key-relay" target="_blank" rel="noopener noreferrer">项目主页</a><a href="https://github.com/sunnyx11/key-relay#readme" target="_blank" rel="noopener noreferrer">使用说明</a><a href="https://github.com/sunnyx11/key-relay/issues" target="_blank" rel="noopener noreferrer">问题反馈</a></nav>
+              <p class="about-contact"><span>联系邮箱</span><a href="mailto:hkhl888@foxmail.com">hkhl888@foxmail.com</a></p>
+            </div>
+            <div class="about-legal"><span>© 2026 sunnyx11</span><button class="text-button" id="show-license">MIT 许可证</button></div>
+          </div>
+          <div class="about-content" id="license-view" hidden>
+            <div class="license-heading"><h2>MIT 许可证</h2><button class="button" id="back-about">返回关于</button></div>
+            <pre class="license-text" aria-label="MIT 许可证全文">MIT License
+
+Copyright (c) 2026 sunnyx11
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+</pre>
+          </div>
+        </section>
       </div>
       <footer class="footer">
         <p id="status-message" role="status" aria-live="polite" data-state="idle">点击后等待 5 秒，请在此期间选择输入位置。</p>
@@ -152,7 +234,7 @@
       <summary>原型演示</summary>
       <div class="preview-heading"><label for="target">测试输入框</label><button class="button" id="clear-target">清空结果</button></div>
       <textarea id="target" placeholder="点击开始后，在倒计时结束前点击这里。" spellcheck="false"></textarea>
-      <p class="preview-note">此区域用于评审交互，正式软件界面仅包含上方窗口。原型只在本页演示输入和快捷键，无法向其他程序输入；Enter、Tab 在此显示为文本。</p>
+      <p class="preview-note">此区域用于演示交互，桌面软件界面为上方窗口。原型只向本页测试框写入文本，快捷键在本页生效；Enter、Tab 显示为文本。图钉仅演示选中状态，窗口按钮仅改变页面内展示；标题双击切换展示宽度，系统窗口拖动在桌面版本中验证。最小化或关闭后可通过上方按钮恢复演示。版本为静态示例，链接由浏览器及默认邮件应用处理。</p>
     </details>
   </main>
   <script>
@@ -165,6 +247,10 @@
       const start = document.querySelector('#start');
       const message = document.querySelector('#status-message');
       const tabs = [...document.querySelectorAll('[role="tab"]')];
+      const pin = document.querySelector('.pin');
+      const appWindow = document.querySelector('.window');
+      const stage = document.querySelector('.stage');
+      const restoreWindow = document.querySelector('#restore-window');
       const heldKeys = new Set();
       let state = 'idle';
       let timer;
@@ -172,6 +258,7 @@
       let sent = 0;
       let spacing = 50;
       let pointerHeld = false;
+      let interactionBlocked = false;
       let suppressedClickTarget = null;
       let interruptedKeys = false;
       let lastProgressTime = 0;
@@ -184,12 +271,17 @@
         message.textContent = next === 'idle'
           ? (delay.checkValidity() ? `点击后等待 ${delay.value} 秒，请在此期间选择输入位置。` : '请在设置中填写 1～60 秒的等待时间。')
           : `${heading}，${description}`;
-        const active = busy();
-        source.readOnly = active;
-        for (const control of [delay, interval, shortcut, document.querySelector('#clear'), document.querySelector('#restore')]) control.disabled = active;
-        start.disabled = next === 'typing' || next === 'arming';
-        tabs[1].disabled = next === 'countdown';
+        if (busy() && tabs[2].getAttribute('aria-selected') === 'true') tabs[0].click();
+        syncControls();
         if (next !== 'countdown') start.textContent = next === 'typing' ? '正在输入…' : '开始输入';
+      }
+
+      function syncControls() {
+        const blocked = busy() || interactionBlocked;
+        source.readOnly = blocked;
+        for (const control of [delay, interval, shortcut, document.querySelector('#clear'), document.querySelector('#restore'), pin, tabs[2]]) control.disabled = blocked;
+        start.disabled = interactionBlocked || state === 'typing' || state === 'arming';
+        tabs[1].disabled = state === 'countdown';
       }
 
       function finish(heading, description, next = 'stopped') {
@@ -283,6 +375,7 @@
         if (state === 'typing' || state === 'arming') {
           // Suppress activation when this pointer sequence began on a disabled control.
           suppressedClickTarget = event.target.closest(':disabled');
+          interactionBlocked = true;
           finish('已中止', `已发送 ${sent} 个字符，剩余内容已取消`);
         }
       }, true);
@@ -293,10 +386,11 @@
         }
         suppressedClickTarget = null;
       }, true);
-      document.addEventListener('pointerup', () => { pointerHeld = false; }, true);
-      document.addEventListener('pointercancel', () => { pointerHeld = false; suppressedClickTarget = null; }, true);
+      document.addEventListener('pointerup', () => { pointerHeld = false; interactionBlocked = false; syncControls(); }, true);
+      document.addEventListener('pointercancel', () => { pointerHeld = false; interactionBlocked = false; suppressedClickTarget = null; syncControls(); }, true);
 
       document.addEventListener('keydown', event => {
+        if (appWindow.hidden || appWindow.classList.contains('minimized')) return;
         heldKeys.add(event.code);
         const isShortcut = event.ctrlKey && event.altKey && !event.shiftKey && !event.metaKey && event.code === shortcut.value;
         if (interruptedKeys) {
@@ -336,30 +430,87 @@
         heldKeys.clear();
         interruptedKeys = false;
         pointerHeld = false;
+        interactionBlocked = false;
         suppressedClickTarget = null;
         if (busy()) finish('演示已结束', '浏览器外的操作请在桌面版本中验证');
+        syncControls();
       });
 
       for (const tab of tabs) {
         tab.addEventListener('click', () => {
           if (tab.disabled) return;
-          document.querySelector('.footer').style.visibility = tab === tabs[0] ? '' : 'hidden';
+          const footer = document.querySelector('.footer');
+          footer.style.visibility = tab === tabs[0] ? '' : 'hidden';
+          footer.inert = tab !== tabs[0];
           for (const item of tabs) {
             const selected = item === tab;
             item.setAttribute('aria-selected', String(selected));
             item.tabIndex = selected ? 0 : -1;
-            document.getElementById(item.getAttribute('aria-controls')).hidden = !selected;
+            const panel = document.getElementById(item.getAttribute('aria-controls'));
+            panel.hidden = !selected;
+            panel.inert = !selected;
           }
         });
         tab.addEventListener('keydown', event => {
           if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
           event.preventDefault();
-          const next = event.key === 'Home' ? tabs[0] : event.key === 'End' ? tabs[1] : tabs[1 - tabs.indexOf(tab)];
-          if (next.disabled) return;
+          const available = tabs.filter(item => !item.disabled);
+          const index = available.indexOf(tab);
+          const next = available[event.key === 'Home' ? 0 : event.key === 'End' ? available.length - 1 : (index + (event.key === 'ArrowRight' ? 1 : -1) + available.length) % available.length];
           next.click();
           next.focus();
         });
       }
+      function setPinned(value) {
+        pin.setAttribute('aria-pressed', String(value));
+        pin.setAttribute('aria-label', value ? '取消置顶' : '置顶窗口');
+        pin.title = value ? '取消置顶' : '置顶窗口';
+        pin.querySelector('g').setAttribute('transform', value ? '' : 'rotate(35 8 8)');
+      }
+      pin.addEventListener('click', () => setPinned(pin.getAttribute('aria-pressed') !== 'true'));
+      document.querySelector('#minimize').addEventListener('click', () => {
+        if (busy()) finish('已取消', '窗口演示已最小化');
+        appWindow.classList.add('minimized');
+        restoreWindow.textContent = '恢复窗口';
+        restoreWindow.hidden = false;
+      });
+      function toggleMaximize() {
+        appWindow.classList.remove('minimized');
+        restoreWindow.hidden = true;
+        stage.classList.toggle('maximized');
+      }
+      document.querySelector('#maximize').addEventListener('click', toggleMaximize);
+      document.querySelector('.title-drag').addEventListener('dblclick', toggleMaximize);
+      document.querySelector('.close').addEventListener('click', () => {
+        clearTimeout(timer);
+        source.value = '';
+        updateCount();
+        setStatus('idle');
+        setPinned(false);
+        appWindow.hidden = true;
+        appWindow.classList.remove('minimized');
+        stage.classList.remove('maximized');
+        tabs[0].click();
+        restoreWindow.textContent = '重新打开';
+        restoreWindow.hidden = false;
+      });
+      restoreWindow.addEventListener('click', () => {
+        appWindow.hidden = false;
+        appWindow.classList.remove('minimized');
+        restoreWindow.hidden = true;
+        tabs.find(tab => tab.getAttribute('aria-selected') === 'true').focus();
+      });
+      function showLicense(value) {
+        const overview = document.querySelector('#about-overview');
+        const license = document.querySelector('#license-view');
+        overview.hidden = value;
+        license.hidden = !value;
+        (value ? license : overview).scrollTop = 0;
+        document.querySelector(value ? '#back-about' : '#show-license').focus();
+      }
+      document.querySelector('#show-license').addEventListener('click', () => showLicense(true));
+      document.querySelector('#back-about').addEventListener('click', () => showLicense(false));
+
       source.addEventListener('input', updateCount);
       document.querySelector('#clear').addEventListener('click', () => {
         if (busy() || !source.value.length) return;
