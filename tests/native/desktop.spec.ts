@@ -75,11 +75,10 @@ test(`packaged WebView2 window, pin and cleanup (${session} session)`, async () 
     await expect.poll(() => page.evaluate(() => Math.abs(innerHeight - Math.max(360, document.querySelector('.window')!.getBoundingClientRect().height)))).toBeLessThan(2);
     await expect.poll(() => page.evaluate(() => innerHeight)).toBeLessThan(400);
     await page.getByRole('button', { name: '最大化或还原' }).click();
-    const maximized = await page.evaluate(async () => {
+    await expect.poll(() => page.evaluate(async () => {
       const runtime = window as unknown as { __TAURI_INTERNALS__: { invoke: (command: string, args?: unknown) => Promise<boolean> } };
       return runtime.__TAURI_INTERNALS__.invoke('plugin:window|is_maximized', { label: 'main' });
-    });
-    expect(maximized).toBe(true);
+    })).toBe(true);
     await page.getByRole('button', { name: '最大化或还原' }).click();
     await expect.poll(() => page.evaluate(() => innerWidth)).toBe(600);
     await expect.poll(() => page.evaluate(() => Math.abs(innerHeight - Math.max(360, document.querySelector('.window')!.getBoundingClientRect().height)))).toBeLessThan(2);
