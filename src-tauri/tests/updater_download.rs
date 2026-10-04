@@ -29,6 +29,8 @@ fn download_fixture(tampered: bool, version: &str) -> Result<Vec<u8>, tauri_plug
                 }
                 Err(error) => panic!("fixture server: {error}"),
             };
+            // Windows sockets inherit the listener's nonblocking mode.
+            socket.set_nonblocking(false).unwrap();
             socket
                 .set_read_timeout(Some(Duration::from_secs(2)))
                 .unwrap();
