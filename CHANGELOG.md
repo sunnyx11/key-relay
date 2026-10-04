@@ -4,6 +4,12 @@
 
 ## [Unreleased]
 
+## [0.2.3] - 2026-10-04
+
+### Changed
+
+- 关于页更新区省略具体发布说明，保留版本、状态和更新操作；完整说明可在 GitHub Release 查看。
+
 ## [0.2.2] - 2026-10-04
 
 ### Changed
@@ -37,7 +43,8 @@
 
 Windows 100% 系统缩放下的界面显示与 RDP 实际兼容性待人工验证。
 
-[Unreleased]: https://github.com/sunnyx11/key-relay/compare/v0.2.2...HEAD
+[Unreleased]: https://github.com/sunnyx11/key-relay/compare/v0.2.3...HEAD
+[0.2.3]: https://github.com/sunnyx11/key-relay/releases/tag/v0.2.3
 [0.2.2]: https://github.com/sunnyx11/key-relay/releases/tag/v0.2.2
 [0.2.1]: https://github.com/sunnyx11/key-relay/releases/tag/v0.2.1
 [0.1.0]: https://github.com/sunnyx11/key-relay/releases/tag/v0.1.0

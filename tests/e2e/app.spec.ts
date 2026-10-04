@@ -205,6 +205,9 @@ test('about update states use the available space at narrow widths and zoom', as
           message: phase === 'error' ? '检查更新失败，请检查网络连接后重试。'.repeat(8) : '',
         }), phase);
         const content = page.locator('.about-content');
+        await expect(page.getByLabel('更新说明', { exact: true })).toHaveCount(0);
+        await expect(content).not.toContainText('更新说明与较长文本。');
+        await expect(page.locator('.update-indicator')).toHaveCount(['available', 'ready'].includes(phase) ? 1 : 0);
         await expect(content).toHaveJSProperty('scrollTop', 0);
         expect(await content.evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true);
         expect((await page.locator('.window').boundingBox())!.height).toBe(height);

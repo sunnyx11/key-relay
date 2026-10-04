@@ -29,7 +29,6 @@ export function UpdatePanel({ updates, hidden, beforeInstall, open }: {
       <label className="update-preference"><input type="checkbox" checked={snapshot.autoCheck} disabled={waiting} onChange={event => { void updates.preference(event.target.checked); }} />自动检查更新</label>
     </div>
     {(error || snapshot.message) && <p className="about-error" role="status">{error || snapshot.message}</p>}
-    {snapshot.notes && <pre className="update-notes" aria-label="更新说明">{snapshot.notes}</pre>}
     {snapshot.phase === 'downloading' && <progress aria-label="下载进度" value={snapshot.total ? snapshot.downloaded : undefined} max={snapshot.total || undefined} />}
     {!snapshot.installed && <p className="update-hint">独立 EXE 需退出后手动替换。<a href="https://github.com/sunnyx11/key-relay/releases/latest" onClick={event => { void open(event); }}>前往下载</a></p>}
     {snapshot.installed && snapshot.phase === 'available' && <button className="button primary" disabled={waiting} onClick={() => { void updates.download(); }}>下载更新</button>}

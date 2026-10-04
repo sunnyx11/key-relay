@@ -1,6 +1,6 @@
 [package]
 name = "key-relay"
-version = "0.2.2"
+version = "0.2.3"
 description = "Send prepared text as keyboard input on Windows"
 authors = ["Key Relay contributors"]
 edition = "2021"
