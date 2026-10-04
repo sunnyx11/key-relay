@@ -56,7 +56,7 @@ export function AboutPanel({ hidden, updates, beforeInstall }: { hidden: boolean
           <div><h2>Key Relay</h2><p className="about-version">{version ? `版本 ${version} · Windows 64 位` : versionError ? 'Windows 64 位' : '正在读取版本…'}</p></div>
         </div>
         {versionError && <div className="about-version-error"><p role="alert">读取版本失败，请重试。</p><button className="button" onClick={() => { setVersionError(false); setVersionAttempt(value => value + 1); }}>重试读取版本</button></div>}
-        <p className="about-description">将准备好的文本作为键盘输入发送到目标位置，<br className="about-line-break" />适用于限制剪贴板粘贴的远程桌面会话。</p>
+        <p className="about-description">将准备好的文本作为键盘输入发送到目标位置，适用于限制剪贴板粘贴的远程桌面会话。</p>
         <UpdatePanel updates={updates} hidden={hidden} beforeInstall={beforeInstall} open={open} />
         <div className="about-support">
           <nav aria-label="项目支持">{links.map(link => <a key={link.url} href={link.url} onClick={event => { void open(event); }}>{link.label}</a>)}</nav>

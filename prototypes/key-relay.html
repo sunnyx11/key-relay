@@ -77,7 +77,7 @@
     .editor-meta { display: flex; justify-content: space-between; gap: 8px; color: var(--muted); margin-top: 6px; font-size: 12px; }
     #text-count { white-space: nowrap; }
     input[type="number"] { height: 30px; width: 66px; padding: 2px 7px; border: 1px solid var(--control-line); background: var(--paper); }
-    .footer { padding: 6px 14px 8px; display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+    .footer { grid-area: 3 / 1; margin: 0 -14px; padding: 6px 14px 8px; display: flex; align-items: center; justify-content: space-between; gap: 16px; }
     #status-message { display: flex; align-items: center; margin: 0; flex: 1; min-width: 0; min-height: 3.4em; color: var(--muted); font-size: 13px; font-weight: 400; line-height: 1.7; overflow-wrap: anywhere; }
     #status-message:is([data-state="countdown"], [data-state="arming"], [data-state="typing"]) { color: var(--accent); }
     #status-message[data-state="done"] { color: var(--success); }
@@ -104,26 +104,28 @@
     .setting-value:has(input:disabled) { background: #f5f5f5; }
     select { width: 100%; height: 30px; padding: 2px 24px 2px 8px; border: 1px solid var(--control-line); background: #fafafa; }
     .setting-note { margin: 16px 0 0; padding-top: 10px; border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; line-height: 1.7; }
-    .about-panel { position: relative; }
-    .about-content { position: absolute; inset: 12px 0 0; overflow: auto; padding: 3px; display: flex; flex-direction: column; gap: 14px; font-size: 13px; scrollbar-gutter: stable; }
+    .about-panel { position: relative; grid-area: 2 / 1 / 4 / 2; min-height: 0; }
+    .about-content { position: absolute; inset: 12px 0 5px; overflow: auto; padding: 3px; display: flex; flex-direction: column; gap: 10px; font-size: 13px; scrollbar-gutter: stable; }
     .about-content > * { flex-shrink: 0; }
     .about-heading { display: flex; align-items: center; gap: 12px; }
     .about-icon { flex-shrink: 0; }
     .about-heading h2 { margin: 0; font-size: 18px; font-weight: 400; line-height: 1.4; }
     .about-version { margin: 3px 0 0; font-size: 12px; color: var(--muted); }
     .about-description { margin: 0; line-height: 1.7; }
-    .about-support { border-top: 1px solid var(--line); padding-top: 12px; }
+    .about-support { border-top: 1px solid var(--line); padding-top: 8px; }
     .about-support nav { display: flex; flex-wrap: wrap; gap: 8px 22px; }
     .about-content a, .text-button { color: var(--accent); text-decoration: none; overflow-wrap: anywhere; }
     .about-content a:hover, .text-button:hover { text-decoration: underline; }
     .about-content a:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
-    .about-contact { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 10px 0 0; }
+    .about-contact { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 8px 0 0; }
     .about-contact span { color: var(--muted); }
     .update-indicator { display: inline-block; width: 5px; height: 5px; background: var(--accent); margin-left: 5px; vertical-align: middle; }
-    .update-section { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; border-top: 1px solid var(--line); padding-top: 10px; }
+    .update-section { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; border-top: 1px solid var(--line); padding-top: 8px; }
+    .update-summary { display: flex; width: 100%; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 16px; }
+    .update-summary .update-status { flex: 1 1 140px; }
     .update-heading { display: flex; width: 100%; align-items: center; justify-content: space-between; gap: 8px; }
     .update-heading h3 { margin: 0; font-size: 13px; font-weight: 400; }
-    .update-preference { display: flex; align-items: center; gap: 6px; font-size: 12px; }
+    .update-preference { display: flex; flex: 0 0 auto; align-items: center; gap: 6px; font-size: 12px; }
     .update-preference input { width: 14px; height: 14px; margin: 0; accent-color: var(--accent); }
     .update-status, .update-hint, .update-confirmation p { margin: 0; font-size: 12px; line-height: 1.7; overflow-wrap: anywhere; }
     .update-hint { color: var(--muted); }
@@ -148,7 +150,7 @@
       .stage { width: calc(100% - 20px); margin-top: 16px; }
       .workspace { padding: 8px 12px 0; }
       .editor-meta { flex-wrap: wrap; }
-      .footer { padding: 6px 12px 8px; }
+      .footer { margin: 0 -12px; padding: 6px 12px 8px; }
       .setting-row { grid-template-columns: minmax(0, 1fr) 144px; column-gap: 12px; }
     }
     @media (max-width: 420px) {
@@ -207,11 +209,13 @@
               </svg>
               <div><h2>Key Relay</h2><p class="about-version">版本 0.2.1 · Windows 64 位</p></div>
             </div>
-            <p class="about-description">将准备好的文本作为键盘输入发送到目标位置，<br>适用于限制剪贴板粘贴的远程桌面会话。</p>
+            <p class="about-description">将准备好的文本作为键盘输入发送到目标位置，适用于限制剪贴板粘贴的远程桌面会话。</p>
             <section class="update-section" aria-label="应用更新">
               <div class="update-heading"><h3>应用更新</h3><button class="button" id="check-update">检查更新</button></div>
-              <label class="update-preference"><input type="checkbox" id="auto-check" checked>自动检查更新</label>
-              <p class="update-status" id="update-status" role="status">可检查新版本</p>
+              <div class="update-summary">
+                <p class="update-status" id="update-status" role="status">可检查新版本</p>
+                <label class="update-preference"><input type="checkbox" id="auto-check" checked>自动检查更新</label>
+              </div>
               <pre class="update-notes" id="update-notes" aria-label="更新说明" hidden>示例版本 0.3.0\n改善输入体验与更新提示。</pre>
               <progress id="update-progress" aria-label="下载进度" hidden></progress>
               <p class="update-hint" id="portable-update" hidden>独立 EXE 需退出后手动替换。<a href="https://github.com/sunnyx11/key-relay/releases/latest" target="_blank" rel="noopener noreferrer">前往下载</a></p>
@@ -251,11 +255,11 @@ SOFTWARE.
 </pre>
           </div>
         </section>
+        <footer class="footer">
+          <p id="status-message" role="status" aria-live="polite" data-state="idle">点击后等待 5 秒，请在此期间选择输入位置。</p>
+          <div class="footer-actions"><div class="start-slot"><button class="button primary" id="start">开始输入</button></div><button class="button" id="clear" title="清空文本后可按 Ctrl+Z 撤销">清空</button></div>
+        </footer>
       </div>
-      <footer class="footer">
-        <p id="status-message" role="status" aria-live="polite" data-state="idle">点击后等待 5 秒，请在此期间选择输入位置。</p>
-        <div class="footer-actions"><div class="start-slot"><button class="button primary" id="start">开始输入</button></div><button class="button" id="clear" title="清空文本后可按 Ctrl+Z 撤销">清空</button></div>
-      </footer>
     </section>
     <details class="preview">
       <summary>原型演示</summary>

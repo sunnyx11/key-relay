@@ -107,7 +107,7 @@ export default function App() {
       <InputPanel hidden={tab !== 'input'} busy={busy || relay.pending || !relay.ready} text={relay.text} sourceRef={sourceRef} onInput={relay.updateText} />
       <SettingsPanel hidden={tab !== 'settings'} busy={busy || !relay.ready} settings={relay.settings} shortcutError={relay.snapshot.shortcutError} onChange={relay.updateSettings} />
       <AboutPanel hidden={tab !== 'about'} updates={updates} beforeInstall={relay.flushSettings} />
+      <TaskFooter hidden={tab !== 'input'} snapshot={relay.snapshot} settings={relay.settings} ready={relay.ready && !relay.snapshot.interactionBlocked && !installing} pending={relay.pending} notice={relay.notice} onStart={start} onClear={clear} />
     </div>
-    <TaskFooter hidden={tab !== 'input'} snapshot={relay.snapshot} settings={relay.settings} ready={relay.ready && !relay.snapshot.interactionBlocked && !installing} pending={relay.pending} notice={relay.notice} onStart={start} onClear={clear} />
   </main>;
 }

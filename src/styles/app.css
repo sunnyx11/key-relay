@@ -15,7 +15,7 @@
 #source { flex-grow: 1; height: 184px; min-height: 130px; }
 .editor-meta { display: flex; justify-content: space-between; gap: 8px; color: var(--muted); margin-top: 6px; font-size: 12px; }
 #text-count { white-space: nowrap; }
-.footer { padding: 6px 14px 8px; display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.footer { grid-area: 3 / 1; margin: 0 -14px; padding: 6px 14px 8px; display: flex; align-items: center; justify-content: space-between; gap: 16px; }
 #status-message { display: flex; align-items: center; margin: 0; flex: 1; min-width: 0; min-height: 3.4em; color: var(--muted); font-size: 13px; font-weight: 400; line-height: 1.7; overflow-wrap: anywhere; }
 #status-message:is([data-state="countdown"], [data-state="arming"], [data-state="typing"]) { color: var(--accent); }
 #status-message[data-state="done"] { color: var(--success); }
@@ -31,29 +31,31 @@
 .setting-copy p { margin: 2px 0 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
 .setting-error { grid-column: 1 / -1; margin: 0; color: var(--error); font-size: 12px; }
 .setting-note { margin: 16px 0 0; padding-top: 10px; border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; line-height: 1.7; }
-.about-panel { position: relative; }
-.about-content { position: absolute; inset: 12px 0 0; overflow: auto; padding: 3px; display: flex; flex-direction: column; gap: 14px; font-size: 13px; scrollbar-gutter: stable; }
+.about-panel { position: relative; grid-area: 2 / 1 / 4 / 2; min-height: 0; }
+.about-content { position: absolute; inset: 12px 0 5px; overflow: auto; padding: 3px; display: flex; flex-direction: column; gap: 10px; font-size: 13px; scrollbar-gutter: stable; }
 .about-content > * { flex-shrink: 0; }
 .about-heading { display: flex; align-items: center; gap: 12px; }
 .about-heading img { flex-shrink: 0; }
 .about-heading h2 { margin: 0; font-size: 18px; font-weight: 400; line-height: 1.4; }
 .about-version { margin: 3px 0 0; font-size: 12px; color: var(--muted); }
 .about-description { margin: 0; line-height: 1.7; }
-.about-support { border-top: 1px solid var(--line); padding-top: 12px; }
+.about-support { border-top: 1px solid var(--line); padding-top: 8px; }
 .about-support nav { display: flex; flex-wrap: wrap; gap: 8px 22px; }
 .about-content a, .text-button { color: var(--accent); text-decoration: none; overflow-wrap: anywhere; }
 .about-content a:hover, .text-button:hover { text-decoration: underline; }
 .about-content a:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
-.about-contact { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 10px 0 0; }
+.about-contact { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 8px 0 0; }
 .about-contact span { color: var(--muted); }
 .about-error, .about-version-error p { color: var(--error); margin: 8px 0 0; overflow-wrap: anywhere; }
 .about-version-error { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .about-version-error p { margin: 0; }
 .update-indicator { display: inline-block; width: 5px; height: 5px; background: var(--accent); margin-left: 5px; vertical-align: middle; }
-.update-section { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; border-top: 1px solid var(--line); padding-top: 10px; }
+.update-section { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; border-top: 1px solid var(--line); padding-top: 8px; }
+.update-summary { display: flex; width: 100%; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 16px; }
+.update-summary .update-status { flex: 1 1 140px; }
 .update-heading { display: flex; width: 100%; align-items: center; justify-content: space-between; gap: 8px; }
 .update-heading h3 { margin: 0; font-size: 13px; font-weight: 400; }
-.update-preference { display: flex; align-items: center; gap: 6px; font-size: 12px; }
+.update-preference { display: flex; flex: 0 0 auto; align-items: center; gap: 6px; font-size: 12px; }
 .update-preference input { width: 14px; height: 14px; margin: 0; accent-color: var(--accent); }
 .update-status, .update-hint, .update-confirmation p { margin: 0; font-size: 12px; line-height: 1.7; overflow-wrap: anywhere; }
 .update-hint { color: var(--muted); }
@@ -69,7 +71,7 @@
 @media (max-width: 520px) {
   :root { --control-width: 144px; }
   .workspace { padding: 8px 12px 0; } .editor-meta { flex-wrap: wrap; }
-  .footer { padding: 6px 12px 8px; }
+  .footer { margin: 0 -12px; padding: 6px 12px 8px; }
   .setting-row { column-gap: 12px; }
 }
 @media (max-width: 420px) { .setting-row { grid-template-columns: minmax(0, 1fr); row-gap: 6px; } }

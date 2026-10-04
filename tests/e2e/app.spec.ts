@@ -161,7 +161,14 @@ test('about links, keyboard navigation and offline license retain the editor sta
   await page.locator('#input-tab').focus(); await page.keyboard.press('End');
   await expect(page.locator('#about-tab')).toBeFocused();
   await page.locator('.window').screenshot({ path: 'test-results/about-600.png' });
-  expect(await page.locator('.about-content').evaluate(el => el.scrollHeight > el.clientHeight)).toBe(true);
+  expect(await page.locator('.about-content').evaluate(el => el.scrollHeight <= el.clientHeight)).toBe(true);
+  const status = (await page.locator('.update-status').boundingBox())!;
+  const preference = (await page.locator('.update-preference').boundingBox())!;
+  expect(Math.abs(status.y - preference.y)).toBeLessThan(4);
+  expect(preference.x).toBeGreaterThan(status.x);
+  const windowBox = (await page.locator('.window').boundingBox())!;
+  const contentBox = (await page.locator('.about-content').boundingBox())!;
+  expect(windowBox.y + windowBox.height - contentBox.y - contentBox.height).toBeLessThanOrEqual(8);
   await page.keyboard.press('Tab'); await expect(page.getByRole('button', { name: '检查更新' })).toBeFocused();
   for (const name of ['项目主页', '使用说明', '问题反馈', 'hkhl888@foxmail.com']) await page.getByRole('link', { name }).click();
   expect(await page.evaluate(() => window.relayTest.openedUrls)).toEqual(['https://github.com/sunnyx11/key-relay', 'https://github.com/sunnyx11/key-relay#readme', 'https://github.com/sunnyx11/key-relay/issues', 'mailto:hkhl888@foxmail.com']);
@@ -169,6 +176,10 @@ test('about links, keyboard navigation and offline license retain the editor sta
   await page.getByRole('button', { name: 'MIT 许可证' }).click();
   await expect(page.getByLabel('MIT 许可证全文')).toContainText('Permission is hereby granted');
   await expect(page.getByRole('button', { name: '返回关于' })).toBeFocused();
+  expect(await page.locator('.about-content').evaluate(el => el.scrollHeight > el.clientHeight)).toBe(true);
+  expect((await page.locator('.window').boundingBox())!.height).toBe(windowBox.height);
+  const licenseBox = (await page.locator('.about-content').boundingBox())!;
+  expect(licenseBox.height).toBe(contentBox.height);
   await page.locator('.about-content').evaluate(el => { el.scrollTop = el.scrollHeight; });
   await expect(page.getByLabel('MIT 许可证全文')).toContainText('SOFTWARE.');
   await page.getByRole('button', { name: '返回关于' }).click();
@@ -176,6 +187,40 @@ test('about links, keyboard navigation and offline license retain the editor sta
   await page.locator('#about-tab').focus(); await page.keyboard.press('Home');
   await expect(page.locator('#source')).toHaveValue('保留文本');
   await page.keyboard.press('Tab'); await expect(page.locator('#source')).toBeFocused();
+});
+
+test('about update states use the available space at narrow widths and zoom', async ({ page }) => {
+  await openApp(page);
+  for (const zoom of [1, 1.5]) {
+    for (const width of [600, 320]) {
+      await page.setViewportSize({ width, height: 1200 });
+      await page.evaluate(value => { document.body.style.zoom = String(value); }, zoom);
+      await page.locator('#input-tab').click();
+      const height = (await page.locator('.window').boundingBox())!.height;
+      await page.locator('#about-tab').click();
+      for (const phase of ['idle', 'current', 'checking', 'available', 'downloading', 'ready', 'error'] as const) {
+        await page.evaluate(phase => window.relayTest.updatePush({
+          phase, version: '0.3.0', downloaded: 50, total: 100,
+          notes: ['available', 'downloading', 'ready'].includes(phase) ? '更新说明与较长文本。'.repeat(80) : '',
+          message: phase === 'error' ? '检查更新失败，请检查网络连接后重试。'.repeat(8) : '',
+        }), phase);
+        const content = page.locator('.about-content');
+        await expect(content).toHaveJSProperty('scrollTop', 0);
+        expect(await content.evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true);
+        expect((await page.locator('.window').boundingBox())!.height).toBe(height);
+        const windowBox = (await page.locator('.window').boundingBox())!;
+        const contentBox = (await content.boundingBox())!;
+        expect(windowBox.y + windowBox.height - contentBox.y - contentBox.height).toBeLessThanOrEqual(8 * zoom);
+        const status = (await page.locator('.update-status').boundingBox())!;
+        const preference = (await page.locator('.update-preference').boundingBox())!;
+        expect(preference.x >= status.x + status.width - 1 || preference.y >= status.y + status.height - 1).toBe(true);
+        await page.getByRole('button', { name: 'MIT 许可证' }).click();
+        await expect(page.getByRole('button', { name: '返回关于' })).toBeFocused();
+        await page.getByRole('button', { name: '返回关于' }).click();
+        await content.evaluate(el => { el.scrollTop = 0; });
+      }
+    }
+  }
 });
 
 test('about tab protects the stop gesture and task start returns to input', async ({ page }) => {

@@ -24,8 +24,10 @@ export function UpdatePanel({ updates, hidden, beforeInstall, open }: {
   }[snapshot.phase];
   return <section className="update-section" aria-label="应用更新">
     <div className="update-heading"><h3>应用更新</h3><button className="button" disabled={waiting || snapshot.phase === 'ready'} onClick={() => { void updates.check(); }}>检查更新</button></div>
-    <label className="update-preference"><input type="checkbox" checked={snapshot.autoCheck} disabled={waiting} onChange={event => { void updates.preference(event.target.checked); }} />自动检查更新</label>
-    <p className="update-status" role="status">{status}</p>
+    <div className="update-summary">
+      <p className="update-status" role="status">{status}</p>
+      <label className="update-preference"><input type="checkbox" checked={snapshot.autoCheck} disabled={waiting} onChange={event => { void updates.preference(event.target.checked); }} />自动检查更新</label>
+    </div>
     {(error || snapshot.message) && <p className="about-error" role="status">{error || snapshot.message}</p>}
     {snapshot.notes && <pre className="update-notes" aria-label="更新说明">{snapshot.notes}</pre>}
     {snapshot.phase === 'downloading' && <progress aria-label="下载进度" value={snapshot.total ? snapshot.downloaded : undefined} max={snapshot.total || undefined} />}

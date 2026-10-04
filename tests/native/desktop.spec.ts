@@ -23,10 +23,19 @@ test(`packaged WebView2 window, pin and cleanup (${session} session)`, async () 
     await expect(page.getByText(`版本 ${config.version} · Windows 64 位`)).toBeVisible();
     await expect(page.getByRole('link', { name: 'hkhl888@foxmail.com' })).toHaveAttribute('href', 'mailto:hkhl888@foxmail.com');
     expect(await page.evaluate(() => innerHeight)).toBe(originalHeight);
+    const contentBox = (await page.locator('.about-content').boundingBox())!;
+    const windowBox = (await page.locator('.window').boundingBox())!;
+    expect(windowBox.y + windowBox.height - contentBox.y - contentBox.height).toBeLessThanOrEqual(8);
+    const updateStatus = (await page.locator('.update-status').boundingBox())!;
+    const updatePreference = (await page.locator('.update-preference').boundingBox())!;
+    expect(Math.abs(updateStatus.y - updatePreference.y)).toBeLessThan(4);
+    expect(await page.locator('.about-content').evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true);
     await page.screenshot({ path: 'test-results/native-about.png' });
     await page.getByRole('button', { name: 'MIT 许可证' }).click();
     await expect(page.getByLabel('MIT 许可证全文')).toContainText('Copyright (c) 2026 sunnyx11');
     expect(await page.evaluate(() => innerHeight)).toBe(originalHeight);
+    expect((await page.locator('.about-content').boundingBox())!.height).toBe(contentBox.height);
+    expect(await page.locator('.about-content').evaluate(el => el.scrollHeight > el.clientHeight)).toBe(true);
     await page.getByRole('button', { name: '返回关于' }).click();
     const forbidden = await page.evaluate(async () => {
       const runtime = window as unknown as { __TAURI_INTERNALS__: { invoke: (command: string, args: unknown) => Promise<void> } };
