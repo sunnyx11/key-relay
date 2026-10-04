@@ -4,9 +4,11 @@
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-04
+
 ### Added
 
-- 提供自动检查及手动检查更新，发现新版本后由使用者确认下载。
+- 提供自动检查及手动检查更新，发现新版本后由使用者确认下载；0.1.0 需手动安装一次新版。
 - 安装版支持签名验证、安装并重启；安装前提示编辑文本将清除，保留有效设置。
 - 独立 EXE 提供正式版本下载入口，支持手动替换。
 - Release 附件提供更新签名和版本清单。
@@ -25,5 +27,6 @@
 
 Windows 100% 系统缩放下的界面显示与 RDP 实际兼容性待人工验证。
 
-[Unreleased]: https://github.com/sunnyx11/key-relay/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/sunnyx11/key-relay/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/sunnyx11/key-relay/releases/tag/v0.2.0
 [0.1.0]: https://github.com/sunnyx11/key-relay/releases/tag/v0.1.0
