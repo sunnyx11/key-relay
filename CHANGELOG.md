@@ -4,6 +4,16 @@
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-10-04
+
+### Changed
+
+- Release 标题使用版本标签，安装包及签名附件统一使用 `key-relay` 前缀。
+
+### Fixed
+
+- 精简关于页更新区域，利用底部空间显示信息，保持页签切换等高及窄窗口换行。
+
 ## [0.2.1] - 2026-10-04
 
 ### Added
@@ -27,6 +37,7 @@
 
 Windows 100% 系统缩放下的界面显示与 RDP 实际兼容性待人工验证。
 
-[Unreleased]: https://github.com/sunnyx11/key-relay/compare/v0.2.1...HEAD
+[Unreleased]: https://github.com/sunnyx11/key-relay/compare/v0.2.2...HEAD
+[0.2.2]: https://github.com/sunnyx11/key-relay/releases/tag/v0.2.2
 [0.2.1]: https://github.com/sunnyx11/key-relay/releases/tag/v0.2.1
 [0.1.0]: https://github.com/sunnyx11/key-relay/releases/tag/v0.1.0
