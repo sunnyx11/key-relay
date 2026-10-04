@@ -6,6 +6,8 @@
 
 版本由维护者选择。仓库的版本配置表示构建版本，已公开版本以 GitHub Releases 为准。CHANGELOG.md 的 Unreleased 保存尚未发布的功能。
 
+Release 标题等于完整版本标签，例如 `v0.2.2` 或 `v0.2.2-rc.1`。创建和更新草稿采用同一命名规则。
+
 ## 构建与附件
 
 构建与检查任务使用 Windows Server 2022 x64、Node.js 24、Rust 1.91.1 和锁文件中的依赖。标签触发三个并行任务：
@@ -43,11 +45,13 @@ npm.cmd run tauri -- build --no-bundle -- --locked
 
 | 附件 | 用途 |
 | --- | --- |
-| `Key Relay_<版本>_x64-setup.exe` | 当前用户 NSIS 安装程序 |
+| `key-relay_<版本>_x64-setup.exe` | 当前用户 NSIS 安装程序 |
 | `key-relay.exe` | 免安装启动，使用系统 WebView2；有效设置仍保存在用户配置目录 |
-| `Key Relay_<版本>_x64-setup.exe.sig` | Tauri 更新签名，内容与安装包对应 |
+| `key-relay_<版本>_x64-setup.exe.sig` | Tauri 更新签名，内容与安装包对应 |
 | `latest.json` | 版本、说明、构建时刻及 Windows x64 的安装包 URL 和完整签名 |
 | `SHA256SUMS.txt` | 其余四个附件的 SHA-256，格式为十六进制值、两个空格、文件名 |
+
+应用产品名为 `Key Relay`。Tauri 生成的安装包名为 `Key Relay_<版本>_x64-setup.exe`，附件准备阶段将其与 `.sig` 按表中名称复制，保留原始字节。更新清单 URL 和 SHA-256 文件均引用发布附件名。
 
 草稿正文为 CHANGELOG.md 中该版本的内容。预发布后缀对应 GitHub 的 prerelease 标记。Actions 中间产物保留 14 天，包含五个附件及传递正文用的 `release-notes.md`。
 
@@ -101,7 +105,7 @@ https://github.com/sunnyx11/key-relay/releases/latest/download/latest.json
   "platforms": {
     "windows-x86_64": {
       "signature": "<安装包 .sig 文件的完整内容>",
-      "url": "https://github.com/sunnyx11/key-relay/releases/download/v0.2.0/Key%20Relay_0.2.0_x64-setup.exe"
+      "url": "https://github.com/sunnyx11/key-relay/releases/download/v0.2.0/key-relay_0.2.0_x64-setup.exe"
     }
   }
 }
@@ -174,7 +178,7 @@ npm run release:bundle -- v0.2.0
 
 ```powershell
 Get-FileHash 'src-tauri/target/release-assets/v0.2.0/key-relay.exe' -Algorithm SHA256
-Get-FileHash 'src-tauri/target/release-assets/v0.2.0/Key Relay_0.2.0_x64-setup.exe' -Algorithm SHA256
+Get-FileHash 'src-tauri/target/release-assets/v0.2.0/key-relay_0.2.0_x64-setup.exe' -Algorithm SHA256
 ```
 
 ## 草稿检查与公开

@@ -6,7 +6,7 @@ import { releaseIdentity } from './release.mjs';
 /** Create/update a draft via Actions' Octokit client. Verify artifacts first; reject published releases. */
 export async function publishDraft(github, repo, tag, directory) {
   const release = releaseIdentity(tag);
-  const names = [`Key Relay_${release.version}_x64-setup.exe`, 'key-relay.exe', `Key Relay_${release.version}_x64-setup.exe.sig`, 'latest.json', 'SHA256SUMS.txt'];
+  const names = [`key-relay_${release.version}_x64-setup.exe`, 'key-relay.exe', `key-relay_${release.version}_x64-setup.exe.sig`, 'latest.json', 'SHA256SUMS.txt'];
   const assets = names.map(name => ({ name, data: readFileSync(join(directory, name)) }));
   const checksums = assets.slice(0, 4).map(({ name, data }) => `${createHash('sha256').update(data).digest('hex')}  ${name}\n`).join('');
   if (assets.some(asset => !asset.data.length) || assets[4].data.toString('utf8') !== checksums) throw new Error('Release attachment checksum mismatch.');
@@ -20,7 +20,7 @@ export async function publishDraft(github, repo, tag, directory) {
   const releases = await github.paginate(github.rest.repos.listReleases, { ...repo, per_page: 100 });
   const existing = releases.find(item => item.tag_name === tag);
   if (existing && !existing.draft) throw new Error(`Release ${tag} is already published; automatic updates are disabled.`);
-  const details = { ...repo, name: `Key Relay ${tag}`, body, draft: true, prerelease: release.prerelease };
+  const details = { ...repo, name: tag, body, draft: true, prerelease: release.prerelease };
   const { data: draft } = existing
     ? await github.rest.repos.updateRelease({ ...details, release_id: existing.id })
     : await github.rest.repos.createRelease({ ...details, tag_name: tag });

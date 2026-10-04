@@ -6,7 +6,7 @@ Key Relay 在本地 Windows 将准备好的文本作为键盘事件发送到当�
 
 ## 安装与使用
 
-运行 Release 中的 `Key Relay_<版本>_x64-setup.exe`，按当前用户安装。支持目标为 Windows 10／11 x64，使用 WebView2；安装程序在缺少运行时时联网下载安装。
+运行 Release 中的 `key-relay_<版本>_x64-setup.exe`，按当前用户安装。支持目标为 Windows 10／11 x64，使用 WebView2；安装程序在缺少运行时时联网下载安装。
 
 1. 在“输入”页填写或粘贴文本。
 2. 选择一种启动方式：

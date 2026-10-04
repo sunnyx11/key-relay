@@ -55,11 +55,12 @@ export function inspectRelease(root, tag) {
 /** Copy this version's build outputs and notes into target/release-assets/<tag>, with SHA-256 sums. */
 export function bundleRelease(root, tag) {
   const release = inspectRelease(root, tag);
-  const installer = `Key Relay_${release.version}_x64-setup.exe`;
+  const installer = `key-relay_${release.version}_x64-setup.exe`;
+  const builtInstaller = `src-tauri/target/release/bundle/nsis/Key Relay_${release.version}_x64-setup.exe`;
   const sources = [
-    [installer, `src-tauri/target/release/bundle/nsis/${installer}`],
+    [installer, builtInstaller],
     ['key-relay.exe', 'src-tauri/target/release/key-relay.exe'],
-    [`${installer}.sig`, `src-tauri/target/release/bundle/nsis/${installer}.sig`],
+    [`${installer}.sig`, `${builtInstaller}.sig`],
   ];
   const binaries = sources.map(([name, path]) => {
     const bytes = readFileSync(join(root, path));
