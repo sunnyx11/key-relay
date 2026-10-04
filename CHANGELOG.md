@@ -4,7 +4,7 @@
 
 ## [Unreleased]
 
-## [0.2.0] - 2026-10-04
+## [0.2.1] - 2026-10-04
 
 ### Added
 
@@ -27,6 +27,6 @@
 
 Windows 100% 系统缩放下的界面显示与 RDP 实际兼容性待人工验证。
 
-[Unreleased]: https://github.com/sunnyx11/key-relay/compare/v0.2.0...HEAD
-[0.2.0]: https://github.com/sunnyx11/key-relay/releases/tag/v0.2.0
+[Unreleased]: https://github.com/sunnyx11/key-relay/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/sunnyx11/key-relay/releases/tag/v0.2.1
 [0.1.0]: https://github.com/sunnyx11/key-relay/releases/tag/v0.1.0
