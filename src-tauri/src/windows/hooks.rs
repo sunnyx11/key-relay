@@ -1,7 +1,7 @@
 use std::{
     collections::HashSet,
     sync::{
-        atomic::{AtomicBool, AtomicU64, AtomicU8, Ordering},
+        atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicU8, Ordering},
         Arc,
     },
 };
@@ -12,6 +12,7 @@ pub struct Signals {
     pub phase: AtomicU8,
     pub stop: AtomicBool,
     pub cycle: AtomicU64,
+    pub shortcut_key: AtomicU32,
     pub mouse_buttons: AtomicU8,
 }
 
@@ -46,18 +47,22 @@ impl Tracker {
         if injected && marker == super::input::INPUT_MARKER {
             return None;
         }
-        let repeated = self.held.contains(&vk);
-        if down {
-            if self.held.is_empty() {
-                self.signals.cycle.fetch_add(1, Ordering::SeqCst);
+        let cycle_key =
+            super::input::is_modifier(vk) || vk == self.signals.shortcut_key.load(Ordering::SeqCst);
+        if cycle_key || self.held.contains(&vk) {
+            if down {
+                if self.held.is_empty() {
+                    self.signals.cycle.fetch_add(1, Ordering::SeqCst);
+                }
+                self.held.insert(vk);
+            } else {
+                self.held.remove(&vk);
             }
-            self.held.insert(vk);
-            let phase = self.signals.phase.load(Ordering::SeqCst);
-            if phase == 3 || (phase == 1 && !repeated) || (phase == 2 && vk == 27) {
-                self.signals.stop.store(true, Ordering::SeqCst);
-            }
-        } else {
-            self.held.remove(&vk);
+        } else if vk != 27 {
+            return None;
+        }
+        if down && vk == 27 && matches!(self.signals.phase.load(Ordering::SeqCst), 1..=3) {
+            self.signals.stop.store(true, Ordering::SeqCst);
         }
         Some(HookEvent::Key {
             vk,
@@ -232,21 +237,63 @@ mod tests {
         assert_eq!(signals.mouse_buttons.load(Ordering::SeqCst), 0);
     }
     #[test]
-    fn own_events_do_not_interrupt_but_foreign_events_do() {
-        let signals = Arc::new(Signals::default());
-        signals.phase.store(3, Ordering::SeqCst);
-        let mut tracker = Tracker {
-            held: HashSet::new(),
-            signals: signals.clone(),
-        };
-        assert!(tracker.key(65, true, true, INPUT_MARKER).is_none());
-        assert!(!signals.stop.load(Ordering::SeqCst));
-        assert!(tracker.key(65, true, true, 42).is_some());
-        assert!(signals.stop.load(Ordering::SeqCst));
+    fn only_external_escape_interrupts_every_active_phase() {
+        for phase in [1, 2, 3] {
+            let signals = Arc::new(Signals::default());
+            signals.phase.store(phase, Ordering::SeqCst);
+            let mut tracker = Tracker {
+                held: HashSet::new(),
+                signals: signals.clone(),
+            };
+            assert!(tracker.key(27, true, true, INPUT_MARKER).is_none());
+            for vk in [65, 0x25, 0x85, 0xA2] {
+                tracker.key(vk, true, false, 0);
+                tracker.key(vk, true, false, 0);
+                tracker.key(vk, false, false, 0);
+                tracker.key(vk, true, true, 42);
+                tracker.key(vk, false, true, 42);
+                assert!(
+                    !signals.stop.load(Ordering::SeqCst),
+                    "phase={phase}, key {vk:#x}"
+                );
+            }
+            tracker.key(27, false, false, 0);
+            assert!(!signals.stop.load(Ordering::SeqCst));
+            assert!(tracker.key(27, true, true, 42).is_some());
+            assert!(signals.stop.load(Ordering::SeqCst));
+        }
     }
     #[test]
-    fn key_cycle_changes_only_after_full_release() {
+    fn unrelated_held_keys_allow_independent_shortcut_cycles() {
+        for vk in [65, 0x85, 120] {
+            let signals = Arc::new(Signals::default());
+            signals.shortcut_key.store(119, Ordering::SeqCst);
+            let mut tracker = Tracker {
+                held: HashSet::new(),
+                signals: signals.clone(),
+            };
+            tracker.key(vk, true, false, 0);
+            tracker.key(162, true, false, 0);
+            tracker.key(164, true, false, 0);
+            tracker.key(119, true, false, 0);
+            let first = signals.cycle.load(Ordering::SeqCst);
+            tracker.key(119, false, false, 0);
+            tracker.key(164, false, false, 0);
+            tracker.key(162, false, false, 0);
+            tracker.key(162, true, false, 0);
+            tracker.key(164, true, false, 0);
+            tracker.key(119, true, false, 0);
+            assert_eq!(
+                signals.cycle.load(Ordering::SeqCst),
+                first + 1,
+                "key {vk:#x}"
+            );
+        }
+    }
+    #[test]
+    fn changing_shortcut_releases_the_previous_function_key() {
         let signals = Arc::new(Signals::default());
+        signals.shortcut_key.store(119, Ordering::SeqCst);
         let mut tracker = Tracker {
             held: HashSet::new(),
             signals: signals.clone(),
@@ -254,12 +301,37 @@ mod tests {
         tracker.key(162, true, false, 0);
         tracker.key(164, true, false, 0);
         tracker.key(119, true, false, 0);
-        assert_eq!(signals.cycle.load(Ordering::SeqCst), 1);
-        tracker.key(119, false, false, 0);
         tracker.key(162, false, false, 0);
         tracker.key(164, false, false, 0);
+        signals.shortcut_key.store(120, Ordering::SeqCst);
+        tracker.key(119, false, false, 0);
         tracker.key(162, true, false, 0);
+        tracker.key(164, true, false, 0);
+        tracker.key(120, true, false, 0);
         assert_eq!(signals.cycle.load(Ordering::SeqCst), 2);
+    }
+    #[test]
+    fn key_cycle_changes_only_after_full_release() {
+        for key in [119, 120, 121] {
+            let signals = Arc::new(Signals::default());
+            signals.shortcut_key.store(key, Ordering::SeqCst);
+            let mut tracker = Tracker {
+                held: HashSet::new(),
+                signals: signals.clone(),
+            };
+            tracker.key(162, true, false, 0);
+            tracker.key(164, true, false, 0);
+            tracker.key(key, true, false, 0);
+            assert_eq!(signals.cycle.load(Ordering::SeqCst), 1);
+            tracker.key(162, false, false, 0);
+            tracker.key(164, false, false, 0);
+            tracker.key(162, true, false, 0);
+            assert_eq!(signals.cycle.load(Ordering::SeqCst), 1);
+            tracker.key(162, false, false, 0);
+            tracker.key(key, false, false, 0);
+            tracker.key(162, true, false, 0);
+            assert_eq!(signals.cycle.load(Ordering::SeqCst), 2);
+        }
     }
     #[test]
     fn countdown_only_escape_interrupts_and_release_does_not() {

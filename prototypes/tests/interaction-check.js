@@ -195,7 +195,10 @@ async page => {
       check(/已发送 \d+ \/ 180/.test(await page.locator('#status-message').textContent()), 'No numeric progress');
       await page.waitForFunction(() => /已发送 ([2-9]|\d{2,}) \/ 180/.test(document.querySelector('#status-message').textContent));
       await page.keyboard.press('x');
-      check(await state() === 'stopped', 'Keyboard interruption failed');
+      check(await state() === 'typing', 'Ordinary typing must keep the task active');
+      check((await page.locator('#status-message').textContent()).includes('按 Esc 或点击鼠标停止'), 'Escape guidance missing');
+      await page.keyboard.press('Escape');
+      check(await state() === 'stopped', 'Escape interruption failed');
     }],
     ['Countdown reserves footer space while keeping idle button small', async () => {
       await page.locator('#source').fill('Text');
@@ -242,7 +245,7 @@ async page => {
       check(await page.locator('#source').inputValue() === text, 'Source changed');
       check(await page.locator('#settings-tab').isEnabled(), 'Settings unavailable after completion');
     }],
-    ['Shortcut waits for full release and stops on real input', async () => {
+    ['Shortcut waits for full release and stops on Escape or mouse input', async () => {
       await page.locator('#source').fill('abcdef'.repeat(30));
       await target();
       await page.keyboard.down('Control');
@@ -266,8 +269,55 @@ async page => {
       await page.keyboard.press('Control+Alt+F8');
       await waitState('typing');
       await page.keyboard.press('x');
-      check(await state() === 'stopped', 'Real key did not interrupt');
-      check((await page.locator('#target').inputValue()).endsWith('x'), 'Real key was consumed');
+      check(await state() === 'typing', 'Ordinary key interrupted typing');
+      check((await page.locator('#target').inputValue()).includes('x'), 'Ordinary key was consumed');
+      await page.keyboard.press('Escape');
+      check(await state() === 'stopped', 'Escape did not interrupt');
+    }],
+    ['Unrelated held keys allow shortcut startup, restart and countdown', async () => {
+      await page.locator('#source').fill('abcdef'.repeat(30));
+      await configure('#delay', '1');
+      await target();
+      await page.locator('#target').dispatchEvent('keydown', { key: 'F22', code: 'F22' });
+      await page.keyboard.down('Control');
+      await page.keyboard.down('Alt');
+      await page.keyboard.down('F8');
+      check(await state() === 'arming', 'Shortcut did not arm with F22 held');
+      await page.locator('#target').dispatchEvent('keydown', { key: 'x', code: 'KeyX' });
+      check(await state() === 'arming', 'Ordinary key cancelled arming');
+      await page.keyboard.up('Alt');
+      await page.keyboard.up('Control');
+      check(await state() === 'arming', 'Selected function key must release before sending');
+      await page.keyboard.up('F8');
+      await waitState('typing');
+      await page.keyboard.press('Escape');
+      check(await state() === 'stopped', 'Escape did not stop typing');
+      await page.keyboard.press('Control+Alt+F8');
+      await waitState('typing');
+      await page.keyboard.press('Escape');
+      await page.locator('#start').click();
+      await target();
+      await waitState('typing');
+      await page.keyboard.press('Escape');
+    }],
+    ['Escape stops arming and modifiers still block countdown startup', async () => {
+      await page.locator('#source').fill('abcdef');
+      await configure('#delay', '1');
+      await target();
+      await page.keyboard.down('Control');
+      await page.keyboard.down('Alt');
+      await page.keyboard.down('F8');
+      await page.keyboard.press('Escape');
+      check(await state() === 'stopped', 'Escape did not cancel arming');
+      await page.keyboard.up('F8');
+      await page.keyboard.up('Alt');
+      await page.keyboard.up('Control');
+      await page.locator('#start').click();
+      await target();
+      await page.keyboard.down('Control');
+      await waitState('stopped');
+      await page.keyboard.up('Control');
+      check(await page.locator('#target').inputValue() === '', 'Held modifier allowed sending');
     }],
     ['Changed shortcut and default restoration work', async () => {
       await page.locator('#source').fill('ABC');
@@ -365,7 +415,7 @@ async page => {
         await target();
         await page.keyboard.press('Control+Alt+F8');
         await waitState('typing');
-        await page.keyboard.press('x');
+        await page.keyboard.press('Escape');
         await verify('stopped', '已中止');
         await page.locator('#clear').click();
         await verify('idle', 'Ctrl+Z');

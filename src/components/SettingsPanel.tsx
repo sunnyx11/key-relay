@@ -13,7 +13,7 @@ export function SettingsPanel({ hidden, busy, settings, shortcutError, onChange 
       {shortcutError && <p className="setting-error" id="shortcut-error" role="alert">{shortcutError}</p>}
     </div>
     <NumberSetting id="interval" label="字符间隔" note="10～1,000 毫秒，数值越大输入越慢" unit="毫秒" min={10} max={1000} value={settings.intervalMs} disabled={busy} error="请输入 10～1,000 毫秒的整数。" onChange={value => onChange({ ...settings, intervalMs: value })} />
-    <p className="setting-note">输入期间，鼠标移动继续；鼠标按下或键盘按键停止。</p>
+    <p className="setting-note">输入期间，鼠标移动和普通按键继续；按 Esc 或点击鼠标停止。</p>
   </section>;
 }
 function NumberSetting({ id, label, note, unit, min, max, value, disabled, error, onChange }: { id: string; label: string; note: string; unit: string; min: number; max: number; value: number | null; disabled: boolean; error: string; onChange: (value: number | null) => void }) {

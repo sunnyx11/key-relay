@@ -1,6 +1,7 @@
 use crate::{
     settings::Settings,
     text::{units, Unit},
+    windows::input,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
@@ -45,6 +46,8 @@ pub struct Snapshot {
 /// Deterministic task state. Time is monotonic milliseconds supplied by the worker.
 pub struct Engine {
     pub snapshot: Snapshot,
+    /// Frozen function key to await for a shortcut start; button starts use None.
+    pub startup_key: Option<u32>,
     draft: Draft,
     pending: Vec<Unit>,
     deadline: u64,
@@ -58,6 +61,7 @@ impl Engine {
     /// Initialize idle state and an empty draft using validated preferences.
     pub fn new(settings: Settings) -> Self {
         Self {
+            startup_key: None,
             draft: Draft {
                 revision: 0,
                 text: String::new(),
@@ -109,10 +113,11 @@ impl Engine {
             self.draft = draft;
         }
     }
-    /// Start a frozen draft or cancel an existing task; validation preserves the phase.
+    /// Start a frozen draft; None uses countdown, Some(vk) waits for the triggered shortcut.
+    /// Repeated starts cancel active work; validation preserves the phase.
     pub fn start(
         &mut self,
-        shortcut: bool,
+        shortcut: Option<u32>,
         now: u64,
         own_foreground: bool,
         cycle: u64,
@@ -120,7 +125,7 @@ impl Engine {
         if self.installing {
             return Err("正在安装更新，请稍候。".into());
         }
-        if shortcut && self.blocked_cycle == Some(cycle) {
+        if shortcut.is_some() && self.blocked_cycle == Some(cycle) {
             return Ok(());
         }
         if self.busy() {
@@ -128,7 +133,7 @@ impl Engine {
             self.cancel("已取消，剩余内容已取消");
             return Ok(());
         }
-        if shortcut && own_foreground {
+        if shortcut.is_some() && own_foreground {
             return Err("请先选择目标输入位置。".into());
         }
         if self.draft.text.is_empty() {
@@ -137,23 +142,28 @@ impl Engine {
         let settings: Settings = serde_json::from_value(self.draft.settings.clone())
             .map_err(|_| "请检查设置，等待时间和字符间隔需要有效整数。".to_string())?;
         settings.validate()?;
+        self.startup_key = shortcut;
         self.pending = units(&self.draft.text);
         self.spacing = settings.interval_ms;
         self.deadline = now
-            + if shortcut {
+            + if shortcut.is_some() {
                 0
             } else {
                 settings.delay_seconds * 1000
             };
-        self.snapshot.phase = if shortcut {
+        self.snapshot.phase = if shortcut.is_some() {
             Phase::Arming
         } else {
             Phase::Countdown
         };
         self.snapshot.sent = 0;
         self.snapshot.total = self.pending.len();
-        self.snapshot.remaining_seconds = if shortcut { 0 } else { settings.delay_seconds };
-        self.snapshot.message = if shortcut {
+        self.snapshot.remaining_seconds = if shortcut.is_some() {
+            0
+        } else {
+            settings.delay_seconds
+        };
+        self.snapshot.message = if shortcut.is_some() {
             "等待按键释放，松开快捷键后开始输入"
         } else {
             "等待输入，请在倒计时结束前选择输入位置"
@@ -162,18 +172,17 @@ impl Engine {
         self.snapshot.sequence += 1;
         Ok(())
     }
-    /// Process keyboard events; cycle identifies one continuous physical key sequence.
+    /// Esc cancels active work; modifiers and start function keys maintain release state.
     pub fn key(&mut self, vk: u32, down: bool, cycle: u64) {
         self.cycle = cycle;
         if !down {
             self.held.remove(&vk);
             return;
         }
-        let repeated = !self.held.insert(vk);
-        if self.snapshot.phase == Phase::Typing
-            || (self.snapshot.phase == Phase::Arming && !repeated)
-            || (self.snapshot.phase == Phase::Countdown && vk == 27)
-        {
+        if input::is_modifier(vk) || matches!(vk, 0x77..=0x79) {
+            self.held.insert(vk);
+        }
+        if vk == 27 && self.busy() {
             self.blocked_cycle = Some(cycle);
             self.cancel("已中止，剩余内容已取消");
         }
@@ -208,6 +217,11 @@ impl Engine {
     }
     /// Produce at most one due unit, after final foreground and held-key checks.
     pub fn due(&mut self, now: u64, own_foreground: bool, any_held: bool) -> Option<Unit> {
+        let held_for_start = any_held
+            || self
+                .held
+                .iter()
+                .any(|vk| input::is_modifier(*vk) || self.startup_key == Some(*vk));
         if self.snapshot.phase == Phase::Countdown {
             let remaining = self.deadline.saturating_sub(now).div_ceil(1000);
             if remaining != self.snapshot.remaining_seconds {
@@ -217,11 +231,11 @@ impl Engine {
             if now < self.deadline {
                 return None;
             }
-            if any_held || !self.held.is_empty() {
-                self.cancel("已取消，开始时仍有按键或鼠标按钮按下");
+            if held_for_start {
+                self.cancel("已取消，开始时仍有修饰键或鼠标按钮按下");
                 return None;
             }
-        } else if self.snapshot.phase == Phase::Arming && (any_held || !self.held.is_empty()) {
+        } else if self.snapshot.phase == Phase::Arming && held_for_start {
             return None;
         }
         if matches!(self.snapshot.phase, Phase::Arming | Phase::Countdown) {
@@ -257,7 +271,7 @@ impl Engine {
                 self.pending.clear();
             } else {
                 self.snapshot.message = format!(
-                    "已发送 {} / {} 字符 · 按键或点击停止",
+                    "已发送 {} / {} 字符 · 按 Esc 或点击鼠标停止",
                     self.snapshot.sent, self.snapshot.total
                 );
             }
@@ -286,11 +300,11 @@ mod tests {
         for shortcut in [false, true] {
             let mut e = engine("preserved draft");
             e.prepare_update().unwrap();
-            assert!(e.start(shortcut, 0, false, 1).is_err());
+            assert!(e.start(shortcut.then_some(0x77), 0, false, 1).is_err());
             assert!(!e.busy());
             assert!(e.prepare_update().is_err());
             e.resume_update();
-            e.start(shortcut, 0, false, 2).unwrap();
+            e.start(shortcut.then_some(0x77), 0, false, 2).unwrap();
             assert!(e.busy());
             assert_eq!(e.snapshot.total, 15);
         }
@@ -312,18 +326,18 @@ mod tests {
     #[test]
     fn atomic_stop_blocks_same_shortcut_cycle() {
         let mut e = engine("ab");
-        e.start(false, 0, true, 0).unwrap();
+        e.start(None, 0, true, 0).unwrap();
         e.due(1000, false, false);
         e.interrupt(1);
-        e.start(true, 1001, false, 1).unwrap();
+        e.start(Some(0x77), 1001, false, 1).unwrap();
         assert_eq!(e.snapshot.phase, Phase::Stopped);
-        e.start(true, 1002, false, 2).unwrap();
+        e.start(Some(0x77), 1002, false, 2).unwrap();
         assert_eq!(e.snapshot.phase, Phase::Arming);
     }
     #[test]
     fn countdown_freezes_text_and_observes_spacing() {
         let mut e = engine("ab");
-        e.start(false, 0, true, 0).unwrap();
+        e.start(None, 0, true, 0).unwrap();
         e.sync(Draft {
             revision: 2,
             text: "changed".into(),
@@ -342,21 +356,21 @@ mod tests {
     #[test]
     fn empty_and_invalid_drafts_preserve_phase() {
         let mut e = engine("");
-        assert!(e.start(false, 0, false, 0).is_err());
+        assert!(e.start(None, 0, false, 0).is_err());
         assert_eq!(e.snapshot.phase, Phase::Idle);
         e.sync(Draft {
             revision: 2,
             text: "a".into(),
             settings: serde_json::json!({"delaySeconds":0,"intervalMs":50,"shortcut":"F8"}),
         });
-        assert!(e.start(false, 0, false, 0).is_err());
+        assert!(e.start(None, 0, false, 0).is_err());
         assert_eq!(e.snapshot.phase, Phase::Idle);
     }
     #[test]
     fn final_checks_cancel_before_any_send() {
         for (foreground, held) in [(true, false), (false, true)] {
             let mut e = engine("a");
-            e.start(false, 0, false, 0).unwrap();
+            e.start(None, 0, false, 0).unwrap();
             assert_eq!(e.due(1000, foreground, held), None);
             assert_eq!(e.snapshot.phase, Phase::Stopped);
         }
@@ -364,11 +378,11 @@ mod tests {
     #[test]
     fn shortcut_waits_for_every_key_and_rejects_own_window() {
         let mut e = engine("a");
-        assert!(e.start(true, 0, true, 1).is_err());
+        assert!(e.start(Some(0x77), 0, true, 1).is_err());
         e.key(0xA2, true, 1);
         e.key(0xA4, true, 1);
         e.key(0x77, true, 1);
-        e.start(true, 0, false, 1).unwrap();
+        e.start(Some(0x77), 0, false, 1).unwrap();
         e.key(0x77, false, 1);
         assert_eq!(e.due(5, false, true), None);
         e.key(0xA4, false, 1);
@@ -376,27 +390,141 @@ mod tests {
         assert_eq!(e.due(10, false, false), Some(Unit::Character('a')));
     }
     #[test]
-    fn physical_key_interrupts_and_same_cycle_cannot_restart() {
+    fn shortcut_release_uses_triggered_key_when_draft_settings_change() {
+        let mut e = engine("a");
+        e.sync(Draft {
+            revision: 2,
+            text: "a".into(),
+            settings: serde_json::json!({"delaySeconds":1,"intervalMs":50,"shortcut":"F9"}),
+        });
+        e.key(0x77, true, 1);
+        e.start(Some(0x77), 0, false, 1).unwrap();
+        assert_eq!(e.due(0, false, false), None);
+        assert_eq!(e.snapshot.phase, Phase::Arming);
+        e.key(0x77, false, 1);
+        assert_eq!(e.due(1, false, false), Some(Unit::Character('a')));
+    }
+    #[test]
+    fn selected_function_key_waits_for_release_with_frozen_settings() {
+        for (shortcut, vk) in [("F8", 0x77), ("F9", 0x78), ("F10", 0x79)] {
+            let mut e = engine("a");
+            let settings = Settings {
+                shortcut: shortcut.into(),
+                ..Settings::default()
+            };
+            e.sync(Draft {
+                revision: 2,
+                text: "a".into(),
+                settings: serde_json::to_value(settings).unwrap(),
+            });
+            e.key(vk, true, 1);
+            e.start(Some(vk), 0, false, 1).unwrap();
+            assert_eq!(e.due(0, false, false), None);
+            assert_eq!(e.snapshot.phase, Phase::Arming);
+            e.key(vk, false, 1);
+            assert_eq!(e.due(1, false, false), Some(Unit::Character('a')));
+            e.submitted(1, Ok(()));
+            e.key(vk, true, 2);
+            e.start(None, 2, false, 2).unwrap();
+            assert_eq!(e.due(5002, false, false), Some(Unit::Character('a')));
+        }
+    }
+    #[test]
+    fn ordinary_keys_do_not_interrupt_active_tasks() {
+        for phase in [Phase::Arming, Phase::Countdown, Phase::Typing] {
+            for vk in [65, 0x25, 0x85, 0xA2] {
+                let mut e = engine("ab");
+                e.start((phase == Phase::Arming).then_some(0x77), 0, false, 1)
+                    .unwrap();
+                if phase == Phase::Typing {
+                    assert_eq!(e.due(1000, false, false), Some(Unit::Character('a')));
+                    e.submitted(1000, Ok(()));
+                }
+                e.key(vk, true, 2);
+                e.key(vk, true, 2);
+                e.key(vk, false, 2);
+                assert_eq!(e.snapshot.phase, phase, "key {vk:#x}");
+            }
+        }
+    }
+    #[test]
+    fn unrelated_held_keys_allow_button_and_shortcut_start() {
+        for shortcut in [false, true] {
+            for vk in [65, 0x25, 0x85, 0x78] {
+                let mut e = engine("a");
+                e.key(vk, true, 1);
+                e.start(shortcut.then_some(0x77), 0, false, 1).unwrap();
+                assert_eq!(
+                    e.due(1000, false, false),
+                    Some(Unit::Character('a')),
+                    "shortcut={shortcut}, key {vk:#x}"
+                );
+                e.submitted(1000, Ok(()));
+                assert_eq!(e.snapshot.phase, Phase::Done);
+            }
+        }
+    }
+    #[test]
+    fn modifiers_still_block_button_and_shortcut_start() {
+        for shortcut in [false, true] {
+            for vk in [
+                0x10, 0x11, 0x12, 0x5B, 0x5C, 0xA0, 0xA1, 0xA2, 0xA3, 0xA4, 0xA5,
+            ] {
+                let mut e = engine("a");
+                e.key(vk, true, 1);
+                e.start(shortcut.then_some(0x77), 0, false, 1).unwrap();
+                assert_eq!(e.due(1000, false, false), None, "key {vk:#x}");
+                assert_eq!(e.snapshot.sent, 0);
+                if shortcut {
+                    assert_eq!(e.snapshot.phase, Phase::Arming);
+                    e.key(vk, false, 1);
+                    assert_eq!(e.due(1001, false, false), Some(Unit::Character('a')));
+                } else {
+                    assert_eq!(e.snapshot.phase, Phase::Stopped);
+                }
+            }
+        }
+    }
+    #[test]
+    fn escape_down_interrupts_every_active_phase_and_release_keeps_task() {
+        for phase in [Phase::Arming, Phase::Countdown, Phase::Typing] {
+            let mut e = engine("ab");
+            e.start((phase == Phase::Arming).then_some(0x77), 0, false, 1)
+                .unwrap();
+            if phase == Phase::Typing {
+                e.due(1000, false, false);
+                e.submitted(1000, Ok(()));
+            }
+            e.key(27, false, 2);
+            assert_eq!(e.snapshot.phase, phase);
+            e.key(27, true, 2);
+            assert_eq!(e.snapshot.phase, Phase::Stopped);
+            assert_eq!(e.snapshot.sent, usize::from(phase == Phase::Typing));
+            assert_eq!(e.due(5000, false, false), None);
+        }
+    }
+    #[test]
+    fn escape_interrupts_and_same_shortcut_cycle_cannot_restart() {
         let mut e = engine("ab");
-        e.start(false, 0, false, 0).unwrap();
+        e.start(None, 0, false, 0).unwrap();
         e.due(1000, false, false);
         e.submitted(1000, Ok(()));
-        e.key(0xA2, true, 2);
+        e.key(27, true, 2);
         assert_eq!(e.snapshot.phase, Phase::Stopped);
-        e.start(true, 1001, false, 2).unwrap();
+        e.start(Some(0x77), 1001, false, 2).unwrap();
         assert_eq!(e.snapshot.phase, Phase::Stopped);
-        e.key(0xA2, false, 2);
-        e.start(true, 1002, false, 2).unwrap();
+        e.key(27, false, 2);
+        e.start(Some(0x77), 1002, false, 2).unwrap();
         assert_eq!(e.snapshot.phase, Phase::Stopped);
         e.key(0xA2, true, 3);
-        e.start(true, 1003, false, 3).unwrap();
+        e.start(Some(0x77), 1003, false, 3).unwrap();
         assert_eq!(e.snapshot.phase, Phase::Arming);
         assert_eq!(e.snapshot.sent, 0);
     }
     #[test]
     fn mouse_target_selection_allowed_but_typing_interrupts() {
         let mut e = engine("ab");
-        e.start(false, 0, false, 0).unwrap();
+        e.start(None, 0, false, 0).unwrap();
         e.mouse_down();
         assert_eq!(e.snapshot.phase, Phase::Countdown);
         e.due(1000, false, false);
@@ -409,19 +537,19 @@ mod tests {
     #[test]
     fn countdown_keys_and_duplicate_start_follow_cancel_rules() {
         let mut e = engine("a");
-        e.start(false, 0, false, 0).unwrap();
+        e.start(None, 0, false, 0).unwrap();
         e.key(65, true, 1);
         assert_eq!(e.snapshot.phase, Phase::Countdown);
         e.key(27, true, 1);
         assert_eq!(e.snapshot.phase, Phase::Stopped);
-        e.start(false, 0, false, 0).unwrap();
-        e.start(false, 0, false, 0).unwrap();
+        e.start(None, 0, false, 0).unwrap();
+        e.start(None, 0, false, 0).unwrap();
         assert_eq!(e.snapshot.phase, Phase::Stopped);
     }
     #[test]
     fn send_failure_preserves_successful_count() {
         let mut e = engine("ab");
-        e.start(false, 0, false, 0).unwrap();
+        e.start(None, 0, false, 0).unwrap();
         e.due(1000, false, false);
         e.submitted(1000, Ok(()));
         e.due(1050, false, false);
@@ -438,7 +566,7 @@ mod tests {
             text: "old".into(),
             settings: serde_json::to_value(Settings::default()).unwrap(),
         });
-        e.start(false, 0, false, 0).unwrap();
+        e.start(None, 0, false, 0).unwrap();
         assert_eq!(e.due(1000, false, false), Some(Unit::Character('n')));
     }
 }

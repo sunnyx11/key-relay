@@ -248,7 +248,7 @@ test('task states preserve typography and footer positions', async ({ page }) =>
     return { font: [style.fontFamily, style.fontSize, style.fontWeight, style.lineHeight], x: rect.x, width: rect.width };
   });
   const baseline = await appearance(); const clear = await page.locator('#clear').boundingBox();
-  for (const [phase, message] of [['arming', '等待按键释放，松开快捷键后开始输入'], ['countdown', '等待输入，请在倒计时结束前选择输入位置'], ['typing', '已发送 1 / 3 字符 · 按键或点击停止'], ['done', '已完成，已发送 3 个字符'], ['stopped', '已中止，剩余内容已取消'], ['failed', '系统输入提交失败，请检查本地权限。']] as const) {
+  for (const [phase, message] of [['arming', '等待按键释放，松开快捷键后开始输入'], ['countdown', '等待输入，请在倒计时结束前选择输入位置'], ['typing', '已发送 1 / 3 字符 · 按 Esc 或点击鼠标停止'], ['done', '已完成，已发送 3 个字符'], ['stopped', '已中止，剩余内容已取消'], ['failed', '系统输入提交失败，请检查本地权限。']] as const) {
     await page.evaluate(({ phase, message }) => window.relayTest.push({ phase, message, remainingSeconds: 5 }), { phase, message });
     await expect(page.locator('#status-message')).toHaveText(message); expect(await appearance()).toEqual(baseline);
     expect((await page.locator('#clear').boundingBox())!.x).toBe(clear!.x);

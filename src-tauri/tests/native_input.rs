@@ -53,8 +53,8 @@ fn text(window: HWND) -> String {
 fn unicode_enter_tab_hooks_and_cleanup() {
     unsafe {
         assert!(
-            !input::any_held(),
-            "Release all keyboard and mouse buttons first"
+            !input::any_held(None),
+            "Release modifier keys and mouse buttons first"
         );
         let previous = GetForegroundWindow();
         let window = CreateWindowExW(
@@ -105,7 +105,7 @@ fn unicode_enter_tab_hooks_and_cleanup() {
             !signals.stop.load(Ordering::SeqCst),
             "Own marked events must pass without interruption"
         );
-        assert!(!input::any_held());
+        assert!(!input::any_held(None));
         let mut foreign = input::encode(key_relay::text::Unit::Character('!'));
         for event in &mut foreign {
             event.Anonymous.ki.dwExtraInfo = 0;
@@ -114,18 +114,39 @@ fn unicode_enter_tab_hooks_and_cleanup() {
         assert_eq!(SendInput(&foreign, std::mem::size_of::<INPUT>() as i32), 2);
         pump();
         assert!(
-            signals.stop.load(Ordering::SeqCst),
-            "Foreign input must latch interruption"
+            !signals.stop.load(Ordering::SeqCst),
+            "Ordinary foreign input keeps the task active"
         );
         assert_eq!(
             text(window),
             format!("{sample}!"),
-            "The interrupting input retains its normal effect"
+            "Ordinary input retains its normal effect"
         );
+        let escape: Vec<_> = [KEYBD_EVENT_FLAGS(0), KEYEVENTF_KEYUP]
+            .into_iter()
+            .map(|flags| INPUT {
+                r#type: INPUT_KEYBOARD,
+                Anonymous: INPUT_0 {
+                    ki: KEYBDINPUT {
+                        wVk: VK_ESCAPE,
+                        dwFlags: flags,
+                        ..Default::default()
+                    },
+                },
+            })
+            .collect();
+        assert_eq!(GetForegroundWindow(), receiver.window);
+        assert_eq!(SendInput(&escape, std::mem::size_of::<INPUT>() as i32), 2);
+        pump();
+        assert!(
+            signals.stop.load(Ordering::SeqCst),
+            "Foreign Escape input latches interruption"
+        );
+        assert_eq!(text(window), format!("{sample}!"));
         hooks.stop();
         signals.stop.store(false, Ordering::SeqCst);
         assert_eq!(GetForegroundWindow(), receiver.window);
-        assert_eq!(SendInput(&foreign, std::mem::size_of::<INPUT>() as i32), 2);
+        assert_eq!(SendInput(&escape, std::mem::size_of::<INPUT>() as i32), 2);
         pump();
         assert!(
             !signals.stop.load(Ordering::SeqCst),

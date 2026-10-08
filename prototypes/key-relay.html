@@ -196,7 +196,7 @@
             <div class="setting-value"><input type="number" id="interval" min="10" max="1000" step="1" value="50" aria-describedby="interval-note interval-unit interval-error" required><span id="interval-unit">毫秒</span></div>
             <p class="setting-error" id="interval-error" role="alert" hidden>请输入 10～1,000 毫秒的整数。</p>
           </div>
-          <p class="setting-note">输入期间，鼠标移动继续；鼠标按下或键盘按键停止。</p>
+          <p class="setting-note">输入期间，鼠标移动和普通按键继续；按 Esc 或点击鼠标停止。</p>
         </section>
         <section class="panel about-panel" id="about-panel" role="tabpanel" aria-labelledby="about-tab" hidden inert>
           <div class="about-content" id="about-overview">
@@ -293,6 +293,8 @@ SOFTWARE.
       let interruptedKeys = false;
       let lastProgressTime = 0;
       const busy = () => ['countdown', 'arming', 'typing'].includes(state);
+      const isModifier = code => /^(Control|Alt|Shift|Meta)(Left|Right)$/.test(code);
+      const heldForStart = () => [...heldKeys].some(code => isModifier(code) || (state === 'arming' && code === shortcut.value));
       let updateState = 'idle';
       let updateTimer;
       const updateDemo = document.querySelector('#update-demo');
@@ -411,7 +413,7 @@ SOFTWARE.
         }
         const now = performance.now();
         if (sent === 1 || now - lastProgressTime >= 250) {
-          message.textContent = `已发送 ${sent} / ${characters.length} 字符 · 按键或点击停止`;
+          message.textContent = `已发送 ${sent} / ${characters.length} 字符 · 按 Esc 或点击鼠标停止`;
           lastProgressTime = now;
         }
         timer = setTimeout(typeNext, spacing);
@@ -422,11 +424,11 @@ SOFTWARE.
           finish('已取消', '开始前请先点击下方测试输入框');
           return;
         }
-        if (heldKeys.size || pointerHeld) {
-          finish('已取消', '开始时仍有按键或鼠标按钮按下');
+        if (heldForStart() || pointerHeld) {
+          finish('已取消', '开始时仍有修饰键、启动快捷键或鼠标按钮按下');
           return;
         }
-        setStatus('typing', '正在输入', '鼠标按下或键盘按键可停止');
+        setStatus('typing', '正在输入', '按 Esc 或点击鼠标停止');
         typeNext();
       }
 
@@ -467,24 +469,17 @@ SOFTWARE.
 
       document.addEventListener('keydown', event => {
         if (appWindow.hidden || appWindow.classList.contains('minimized')) return;
-        heldKeys.add(event.code);
+        if (isModifier(event.code) || event.code === shortcut.value) heldKeys.add(event.code);
         const isShortcut = event.ctrlKey && event.altKey && !event.shiftKey && !event.metaKey && event.code === shortcut.value;
         if (interruptedKeys) {
           if (isShortcut) event.preventDefault();
           return;
         }
-        if (state === 'typing') {
-          finish('已中止', `已发送 ${sent} 个字符，剩余内容已取消`);
-          return;
-        }
-        if (state === 'arming') {
-          if (!event.repeat) finish('已取消', '等待释放期间发生其他按键');
-          return;
-        }
-        if (state === 'countdown') {
-          if (event.key === 'Escape' || isShortcut) {
-            event.preventDefault();
-            finish('已取消', '倒计时已取消，尚未发送文本');
+        if (busy()) {
+          if (event.key === 'Escape' || (isShortcut && !event.repeat)) {
+            if (isShortcut || state === 'countdown') event.preventDefault();
+            if (state === 'countdown') finish('已取消', '倒计时已取消，尚未发送文本');
+            else finish('已中止', `已发送 ${sent} 个字符，剩余内容已取消`);
           }
           return;
         }
@@ -500,7 +495,7 @@ SOFTWARE.
       document.addEventListener('keyup', event => {
         heldKeys.delete(event.code);
         if (!heldKeys.size) interruptedKeys = false;
-        if (state === 'arming' && !heldKeys.size) beginTyping();
+        if (state === 'arming' && !heldForStart()) beginTyping();
       }, true);
       window.addEventListener('blur', () => {
         heldKeys.clear();

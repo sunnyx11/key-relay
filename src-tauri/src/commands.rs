@@ -28,7 +28,7 @@ pub enum Message {
     Start(Draft, Reply),
     Cancel(Reply),
     Save(Settings, Reply),
-    Shortcut(u64),
+    Shortcut { cycle: u64, key: u32 },
     Hook(HookEvent),
     Shutdown(Reply),
     PrepareUpdate(Reply),
@@ -88,7 +88,7 @@ impl Runtime {
                         } else {
                             signals.stop.store(false, Ordering::SeqCst);
                             engine.start(
-                                false,
+                                None,
                                 now,
                                 input::own_foreground(),
                                 signals.cycle.load(Ordering::SeqCst),
@@ -120,14 +120,14 @@ impl Runtime {
                         }
                         let _ = reply.send(result.map(|_| engine.snapshot.clone()));
                     }
-                    Ok(Message::Shortcut(cycle)) => {
+                    Ok(Message::Shortcut { cycle, key }) => {
                         if !updating && hook_error.is_none() {
                             let was_busy = engine.busy();
                             if !was_busy {
                                 signals.stop.store(false, Ordering::SeqCst);
                             }
                             if let Err(error) =
-                                engine.start(true, now, input::own_foreground(), cycle)
+                                engine.start(Some(key), now, input::own_foreground(), cycle)
                             {
                                 engine.snapshot.message = error;
                                 engine.snapshot.sequence += 1;
@@ -201,16 +201,20 @@ impl Runtime {
                 // The hook's atomic latch is checked again immediately before submission.
                 if engine.busy() && !signals.stop.load(Ordering::SeqCst) {
                     let before = engine.snapshot.phase;
-                    let unit = engine.due(now, input::own_foreground(), input::any_held());
+                    let unit = engine.due(
+                        now,
+                        input::own_foreground(),
+                        input::any_held(engine.startup_key),
+                    );
                     publish_phase(&signals, engine.snapshot.phase);
                     if let Some(unit) = unit {
                         if signals.stop.load(Ordering::SeqCst) {
                             engine.interrupt(signals.cycle.load(Ordering::SeqCst));
-                        } else if before == Phase::Typing || !input::any_held() {
+                        } else if before == Phase::Typing || !input::any_held(engine.startup_key) {
                             engine
                                 .submitted(origin.elapsed().as_millis() as u64, input::send(unit));
                         } else {
-                            engine.cancel("已取消，开始时仍有按键或鼠标按钮按下");
+                            engine.cancel("已取消，开始时仍有修饰键、启动快捷键或鼠标按钮按下");
                         }
                     }
                 }
