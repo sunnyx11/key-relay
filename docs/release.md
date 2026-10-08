@@ -8,6 +8,17 @@
 
 Release 标题等于完整版本标签，例如 `v0.2.2` 或 `v0.2.2-rc.1`。创建和更新草稿采用同一命名规则。
 
+## 版本策略
+
+- 当前项目处于开发阶段，发布版本使用 `0.x.y`。
+- 开发阶段允许出现破坏性变更，提交标题可省略破坏性变更标记 `!`。
+- 提交类型按变更用途选择。新增功能递增次版本号，修复递增补丁版本号，版本保持 `0.x.y`。
+- 提交包含 `!` 或 `BREAKING CHANGE` 时，版本号仍按开发阶段规则选择。
+- 破坏性变更的使用影响和必要迁移说明写入 `CHANGELOG.md` 的对应版本条目。
+- 进入 `1.0.0` 及以上版本阶段，以使用者明确确认为前提。
+
+本项目的版本策略优先于 `git-release` 的通用破坏性变更及主版本递增规则。
+
 ## 构建与附件
 
 构建与检查任务使用 Windows Server 2022 x64、Node.js 24、Rust 1.91.1 和锁文件中的依赖。标签触发三个并行任务：
@@ -117,9 +128,28 @@ https://github.com/sunnyx11/key-relay/releases/latest/download/latest.json
 
 ## 准备版本
 
+### 版本同步文件
+
+准备版本时按以下清单核对版本字段及关联说明。版本字段统一采用本次发布版本。
+
+- [package.json](../package.json)：更新顶层 `version`。
+- [package-lock.json](../package-lock.json)：同步顶层 `version` 和 `packages[""].version`。
+- [src-tauri/Cargo.toml](../src-tauri/Cargo.toml)：更新 `[package].version`。
+- [src-tauri/Cargo.lock](../src-tauri/Cargo.lock)：同步 `key-relay` 包条目的 `version`。
+- [src-tauri/tauri.conf.json](../src-tauri/tauri.conf.json)：更新顶层 `version`。
+- [CHANGELOG.md](../CHANGELOG.md)：添加带日期的版本条目，更新 `[Unreleased]` 比较链接及新版本链接。
+- [prototypes/key-relay.html](../prototypes/key-relay.html)：同步关于页的固定版本文本。
+- [prototypes/tests/interaction-check.js](../prototypes/tests/interaction-check.js)：同步关于页版本文本的断言。
+
+桌面关于页通过 `getVersion()` 读取 Tauri 应用版本，其版本显示随 `src-tauri/tauri.conf.json` 更新。锁文件中的依赖包版本按实际依赖变化维护。
+
+版本字段或显示位置变化时，同步维护本节清单。
+
+### 操作步骤
+
 以 `0.2.0` 为示例，实际版本在发布前确定。
 
-1. 更新 `package.json`、`src-tauri/Cargo.toml` 和 `src-tauri/tauri.conf.json` 的版本号。
+1. 按版本同步文件清单更新三份版本配置、原型版本文本及对应测试断言。
 2. 使用以下命令同步锁文件，复核差异仅包含本次版本调整及预期依赖变化：
 
    ```bash
@@ -147,9 +177,10 @@ https://github.com/sunnyx11/key-relay/releases/latest/download/latest.json
    ```bash
    npm run release:check -- v0.2.0
    npm run test:release
+   node prototypes/tests/run.mjs
    ```
 
-   校验读取三份版本配置及两个锁文件，成功输出包含 `tag`、`version`、`prerelease` 和 `notes` 的 JSON。上述示例对应：
+   版本校验读取三份版本配置及两个锁文件，成功输出包含 `tag`、`version`、`prerelease` 和 `notes` 的 JSON。原型检查覆盖关于页版本文本及交互断言。上述示例对应：
 
    ```json
    {
