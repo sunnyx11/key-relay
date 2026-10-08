@@ -4,6 +4,17 @@
 
 ## [Unreleased]
 
+## [0.2.4] - 2026-10-08
+
+### Changed
+
+- 输入期间普通按键继续任务；中止请按 Esc、点击鼠标或再次按开始快捷键，人工输入可能与自动文本混合。
+
+### Fixed
+
+- 修复普通按键取消快捷键启动的问题，等待启动组合键释放期间可继续普通键盘操作。
+- 修复无关按键的持续按下状态阻止启动的问题，启动检查仅包含修饰键、鼠标按钮及本次启动功能键。
+
 ## [0.2.3] - 2026-10-04
 
 ### Changed
@@ -43,7 +54,8 @@
 
 Windows 100% 系统缩放下的界面显示与 RDP 实际兼容性待人工验证。
 
-[Unreleased]: https://github.com/sunnyx11/key-relay/compare/v0.2.3...HEAD
+[Unreleased]: https://github.com/sunnyx11/key-relay/compare/v0.2.4...HEAD
+[0.2.4]: https://github.com/sunnyx11/key-relay/releases/tag/v0.2.4
 [0.2.3]: https://github.com/sunnyx11/key-relay/releases/tag/v0.2.3
 [0.2.2]: https://github.com/sunnyx11/key-relay/releases/tag/v0.2.2
 [0.2.1]: https://github.com/sunnyx11/key-relay/releases/tag/v0.2.1
