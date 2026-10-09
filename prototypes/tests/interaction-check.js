@@ -200,7 +200,7 @@ async page => {
       await page.keyboard.press('Escape');
       check(await state() === 'stopped', 'Escape interruption failed');
     }],
-    ['Countdown reserves footer space while keeping idle button small', async () => {
+    ['Countdown keeps compact actions fixed and shows seconds in status', async () => {
       await page.locator('#source').fill('Text');
       await configure('#delay', '60');
       const before = await page.locator('#status-message').boundingBox();
@@ -209,9 +209,33 @@ async page => {
       await page.locator('#start').click();
       const after = await page.locator('#status-message').boundingBox();
       const clearAfter = await page.locator('#clear').boundingBox();
-      check(before.x === after.x && before.width === after.width, 'Countdown moved or resized the message area');
+      check(before.x === after.x && before.width === after.width, 'Countdown changed status width');
       check(clearBefore.x === clearAfter.x, 'Countdown moved Clear');
+      check(await page.locator('#start').textContent() === '取消输入', 'Cancel button label must stay compact');
+      check((await page.locator('#start').boundingBox()).width === 72, 'Countdown expanded the start button');
+      check((await page.locator('#status-message').textContent()).includes('剩余 60 秒'), 'Countdown seconds missing from status');
+      await page.waitForFunction(() => document.querySelector('#status-message').textContent.includes('剩余 59 秒'));
       check(await page.locator('#start').evaluate(el => el.scrollWidth <= el.clientWidth), 'Countdown label clipped');
+    }],
+    ['Footer text actions stay adjacent on one row at desktop and narrow widths', async () => {
+      for (const width of [1180, 390, 320]) {
+        await page.setViewportSize({ width, height: 900 });
+        await page.locator('#source').fill('Text');
+        check(await page.getByRole('button', { name: '清理', exact: true }).isVisible(), 'Cleanup text button is missing');
+        check(await page.getByRole('button', { name: '清空', exact: true }).isVisible(), 'Clear text button is missing');
+        const positions = await page.evaluate(() => ['#text-count', '#trim-trailing', '#clear', '#start'].map(selector => {
+          const box = document.querySelector(selector).getBoundingClientRect();
+          return { x: box.x, right: box.right, centerY: box.y + box.height / 2 };
+        }));
+        for (let index = 1; index < positions.length; index += 1) {
+          const previous = positions[index - 1];
+          const current = positions[index];
+          check(current.x - previous.right >= 4 && current.x - previous.right <= 12, 'Footer actions have an oversized gap at width ' + width);
+          if (index >= 2) check(current.x - previous.right === 4, 'Footer button gaps must be equal at width ' + width);
+          check(Math.abs(current.centerY - previous.centerY) <= 1, 'Footer actions wrapped onto separate rows at width ' + width);
+        }
+        check(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'Footer overflow at width ' + width);
+      }
     }],
     ['Narrow settings use stacked labels and controls', async () => {
       await page.setViewportSize({ width: 320, height: 900 });
@@ -341,31 +365,30 @@ async page => {
       for (const width of [420, 390, 320]) {
         await page.setViewportSize({ width, height: 1000 });
         const editor = await page.locator('#source').boundingBox();
-        const meta = await page.locator('.editor-meta').boundingBox();
         const footer = await page.locator('.footer').boundingBox();
         check(editor.height > 184, 'Narrow editor must use the additional panel space');
-        check(footer.y - meta.y - meta.height <= 16, 'Unused space separates text metadata from the footer');
+        check(footer.y - editor.y - editor.height <= 16, 'Unused space separates text editor from the footer');
         await page.locator('#settings-tab').click();
         const settings = await page.locator('.window').boundingBox();
         await page.locator('#input-tab').click();
         check(settings.height === (await page.locator('.window').boundingBox()).height, 'Filling editor changed tab height');
       }
     }],
-    ['Medium windows give status its own row', async () => {
-      await page.setViewportSize({ width: 560, height: 900 });
+    ['Narrow windows give status its own row and preserve toolbar positions', async () => {
+      await page.setViewportSize({ width: 480, height: 900 });
       await page.locator('#source').fill('Text');
       await configure('#delay', '60');
       const before = await page.locator('#status-message').boundingBox();
       const clearBefore = await page.locator('#clear').boundingBox();
-      check(clearBefore.y >= before.y + before.height, 'Medium window still squeezes status beside buttons');
+      const startBefore = await page.locator('#start').boundingBox();
+      check(startBefore.y >= before.y + before.height, 'Narrow window still squeezes status beside the start button');
       await page.locator('#start').click();
       const after = await page.locator('#status-message').boundingBox();
       const clearAfter = await page.locator('#clear').boundingBox();
       check(before.x === after.x && before.width === after.width, 'Countdown changed status width');
-      check(clearBefore.x === clearAfter.x && clearBefore.y === clearAfter.y, 'Countdown shifted Clear');
+      check(clearBefore.x === clearAfter.x, 'Countdown moved Clear');
       const start = await page.locator('#start').boundingBox();
-      const slot = await page.locator('.start-slot').boundingBox();
-      check(start.x >= slot.x && start.width <= slot.width, 'Countdown exceeds its reserved space');
+      check(start.width === 72 && start.y === startBefore.y, 'Countdown changed compact button layout');
     }],
     ['Status messages keep idle typography and layout across task states', async () => {
       for (const width of [1180, 560, 390, 320]) {

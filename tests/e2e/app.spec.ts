@@ -95,6 +95,126 @@ test('native editor clear, undo, redo and subsequent editing', async ({ page }) 
   await page.keyboard.press('Control+z'); await expect(source).toHaveValue('中文 abc');
 });
 
+test('cleanup preserves indentation, internal whitespace, line breaks and Unicode', async ({ page }) => {
+  await openApp(page);
+  const source = page.locator('#source');
+  for (const [input, output] of [
+    ['\t第一行  \t\n  第二行 \t\n\n末行  ', '\t第一行\n  第二行\n\n末行'],
+    ['  a b\t c  \r\n\t中😀e\u0301\t\r\n', '  a b\t c\n\t中😀e\u0301\n'],
+    ['a\u00a0  \nb\u3000\t', 'a\u00a0\nb\u3000'],
+    [' \t\n\t\n', '\n\n'],
+    ['   ', ''],
+    ['abc', 'abc'],
+  ]) {
+    await source.fill(input);
+    await page.getByRole('button', { name: '清理', exact: true }).click();
+    await expect(source).toHaveValue(output);
+    await expect(page.locator('#text-count')).toHaveText(`${Array.from(output).length} 个字符`);
+    await expect.poll(() => page.evaluate(() => window.relayTest.draft?.text)).toBe(output);
+    if (!output) {
+      await expect(page.locator('#trim-trailing')).toBeDisabled();
+      await expect(page.locator('#clear')).toBeDisabled();
+    }
+  }
+  await expect(page.locator('#status-message')).toHaveText('当前文本没有行尾空格。');
+});
+
+test('cleanup undo and redo preserve each line and synchronize an immediate start', async ({ page }) => {
+  await openApp(page);
+  const source = page.locator('#source');
+  await source.fill('a  \nb\t');
+  await page.locator('#trim-trailing').click();
+  await expect(source).toHaveValue('a\nb');
+  await expect(source).toBeFocused();
+  for (const [key, text] of [
+    ['Control+z', 'a  \nb'], ['Control+z', 'a  \nb\t'],
+    ['Control+y', 'a  \nb'], ['Control+y', 'a\nb'],
+  ]) {
+    await page.keyboard.press(key);
+    await expect(source).toHaveValue(text);
+    await expect.poll(() => page.evaluate(() => window.relayTest.draft?.text)).toBe(text);
+    await expect(page.locator('#text-count')).toHaveText(`${text.length} 个字符`);
+  }
+  await page.keyboard.press('Control+End'); await page.keyboard.type('!');
+  await page.keyboard.press('Control+z'); await expect(source).toHaveValue('a\nb');
+  await page.locator('#start').click();
+  await expect(page.locator('#start')).toHaveText('取消输入');
+  expect(await page.evaluate(() => window.relayTest.draft?.text)).toBe('a\nb');
+  expect(await page.evaluate(() => window.relayTest.state.total)).toBe(3);
+  await page.locator('#start').click();
+  await page.locator('#clear').click();
+  await page.keyboard.press('Control+z'); await expect(source).toHaveValue('a\nb');
+  await page.keyboard.press('Control+y'); await expect(source).toHaveValue('');
+});
+
+test('cleanup with no trailing whitespace preserves the existing undo history', async ({ page }) => {
+  await openApp(page);
+  const source = page.locator('#source');
+  await source.fill('abc'); await source.press('End'); await page.keyboard.type('!');
+  await page.locator('#trim-trailing').click();
+  await expect(page.locator('#status-message')).toHaveText('当前文本没有行尾空格。');
+  await source.focus(); await page.keyboard.press('Control+z');
+  await expect(source).toHaveValue('abc');
+  await page.keyboard.press('Control+y'); await expect(source).toHaveValue('abc!');
+});
+
+test('cleanup failure preserves completed edits and synchronizes the actual draft', async ({ page }) => {
+  await openApp(page);
+  await page.locator('#source').fill('a  \nb\t\nc  ');
+  await page.evaluate(() => {
+    const execute = document.execCommand.bind(document);
+    let deletions = 0;
+    document.execCommand = (command, ...args) => command === 'delete' && ++deletions === 2 ? false : execute(command, ...args);
+  });
+  await page.locator('#trim-trailing').click();
+  await expect(page.locator('#source')).toHaveValue('a  \nb\t\nc');
+  await expect(page.locator('#status-message')).toContainText('去除行尾空格未完成');
+  await expect(page.locator('#status-message')).toHaveAttribute('data-state', 'error');
+  await expect.poll(() => page.evaluate(() => window.relayTest.draft?.text)).toBe('a  \nb\t\nc');
+  await page.keyboard.press('Control+z'); await expect(page.locator('#source')).toHaveValue('a  \nb\t\nc  ');
+});
+
+test('footer actions remain compact and keyboard accessible across widths and zoom', async ({ page }) => {
+  await openApp(page); await page.locator('#source').fill('text  ');
+  for (const zoom of [1, 1.5]) {
+    for (const width of [600, 563, 562, 390, 320]) {
+      await page.setViewportSize({ width, height: 1100 });
+      await page.evaluate(value => { document.body.style.zoom = String(value); }, zoom);
+      const boxes = await page.locator('.button-group > button').evaluateAll(els => els.map(el => {
+        const box = el.getBoundingClientRect();
+        return { x: box.x, right: box.right, y: box.y, height: box.height, width: box.width };
+      }));
+      expect(boxes).toHaveLength(3);
+      for (const [index, box] of boxes.entries()) {
+        expect(box.height).toBeCloseTo(26 * zoom, 1);
+        expect(box.width).toBeCloseTo([44, 44, 72][index] * zoom, 1);
+        expect(box.y).toBe(boxes[0].y);
+        if (index) expect(box.x - boxes[index - 1].right).toBeCloseTo(4 * zoom, 1);
+      }
+      const start = boxes[2];
+      await page.locator('#start').click();
+      await expect(page.locator('#start')).toHaveText('取消输入');
+      await expect(page.locator('#status-message')).toHaveText('等待输入，剩余 5 秒，请选择输入位置。');
+      await page.evaluate(() => window.relayTest.push({ remainingSeconds: 4 }));
+      await expect(page.locator('#status-message')).toHaveText('等待输入，剩余 4 秒，请选择输入位置。');
+      const countdown = (await page.locator('#start').boundingBox())!;
+      expect(countdown.x).toBe(start.x); expect(countdown.y).toBe(start.y); expect(countdown.width).toBe(start.width);
+      await page.locator('#start').click();
+    }
+  }
+  await page.evaluate(() => { document.body.style.zoom = '1'; });
+  await page.setViewportSize({ width: 600, height: 900 });
+  await page.locator('#source').focus(); await page.keyboard.press('Tab');
+  const cleanup = page.getByRole('button', { name: '清理', exact: true });
+  await expect(cleanup).toBeFocused();
+  expect(await cleanup.evaluate(el => getComputedStyle(el, '::after').visibility)).toBe('visible');
+  await cleanup.hover(); await expect(cleanup).toHaveAccessibleName('清理');
+  await page.keyboard.press('Enter'); await expect(page.locator('#source')).toHaveValue('text');
+  await page.keyboard.press('Tab'); await page.keyboard.press('Tab');
+  await expect(page.getByRole('button', { name: '清空', exact: true })).toBeFocused();
+  await page.keyboard.press('Space'); await expect(page.locator('#source')).toHaveValue('');
+});
+
 test('invalid fields, restoration and countdown operation', async ({ page }) => {
   await openApp(page); await page.locator('#source').fill('ab');
   await page.getByRole('tab', { name: '设置' }).click(); await page.locator('#interval').fill('1.5');
@@ -105,20 +225,22 @@ test('invalid fields, restoration and countdown operation', async ({ page }) => 
   await expect(page.locator('#interval-error')).toHaveCount(0);
   await page.getByRole('tab', { name: '输入' }).click();
   await page.locator('#start').click(); await expect(page.locator('#settings-tab')).toBeDisabled();
-  await expect(page.locator('#start')).toHaveText('取消输入（剩余 5 秒）');
+  await expect(page.locator('#start')).toHaveText('取消输入');
   await page.locator('#start').click(); await expect(page.locator('#settings-tab')).toBeEnabled();
 });
 
-test('disabled control gesture only interrupts and preserves source', async ({ page }) => {
-  await openApp(page); await page.locator('#source').fill('preserve');
-  await page.evaluate(() => window.relayTest.push({ phase: 'typing', sent: 1, total: 8, message: '已发送 1 / 8 字符' }));
-  const clear = page.locator('#clear'); await expect(clear).toBeDisabled();
-  const box = (await clear.boundingBox())!;
-  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2); await page.mouse.down();
-  await page.evaluate(() => window.relayTest.push({ phase: 'stopped', message: '已中止，剩余内容已取消' }));
-  await page.mouse.up(); await expect(page.locator('#source')).toHaveValue('preserve');
-  await clear.click(); await expect(page.locator('#source')).toHaveValue('');
-});
+for (const selector of ['#trim-trailing', '#clear']) {
+  test(`${selector} stopping gesture preserves source until an independent click`, async ({ page }) => {
+    await openApp(page); await page.locator('#source').fill('preserve  ');
+    await page.evaluate(() => window.relayTest.push({ phase: 'typing', sent: 1, total: 10, message: '已发送 1 / 10 字符' }));
+    const action = page.locator(selector); await expect(action).toBeDisabled();
+    const box = (await action.boundingBox())!;
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2); await page.mouse.down();
+    await page.evaluate(() => window.relayTest.push({ phase: 'stopped', message: '已中止，剩余内容已取消' }));
+    await page.mouse.up(); await expect(page.locator('#source')).toHaveValue('preserve  ');
+    await action.click(); await expect(page.locator('#source')).toHaveValue(selector === '#clear' ? '' : 'preserve');
+  });
+}
 
 test('layout matches widths, breakpoints, editor resizing and zoom', async ({ page }) => {
   await openApp(page);
@@ -250,7 +372,7 @@ test('task states preserve typography and footer positions', async ({ page }) =>
   const baseline = await appearance(); const clear = await page.locator('#clear').boundingBox();
   for (const [phase, message] of [['arming', '等待按键释放，松开快捷键后开始输入'], ['countdown', '等待输入，请在倒计时结束前选择输入位置'], ['typing', '已发送 1 / 3 字符 · 按 Esc 或点击鼠标停止'], ['done', '已完成，已发送 3 个字符'], ['stopped', '已中止，剩余内容已取消'], ['failed', '系统输入提交失败，请检查本地权限。']] as const) {
     await page.evaluate(({ phase, message }) => window.relayTest.push({ phase, message, remainingSeconds: 5 }), { phase, message });
-    await expect(page.locator('#status-message')).toHaveText(message); expect(await appearance()).toEqual(baseline);
+    await expect(page.locator('#status-message')).toHaveText(phase === 'countdown' ? '等待输入，剩余 5 秒，请选择输入位置。' : message); expect(await appearance()).toEqual(baseline);
     expect((await page.locator('#clear').boundingBox())!.x).toBe(clear!.x);
   }
   await page.screenshot({ path: 'test-results/input-600.png', fullPage: true });
@@ -270,6 +392,55 @@ test('pin uses independent clicks and keeps the stopping gesture protected', asy
   await page.mouse.up();
   await expect(pinned).toHaveAttribute('aria-pressed', 'true');
   await pinned.click(); await expect(pin).toHaveAttribute('aria-pressed', 'false');
+});
+
+test('shared buttons match across panels while other controls retain their colors', async ({ page }) => {
+  await openApp(page); await page.setViewportSize({ width: 600, height: 900 });
+  await page.locator('#source').fill('预览文本  ');
+  const appearance = (name: string) => page.getByRole('button', { name, exact: true }).evaluate(el => {
+    const style = getComputedStyle(el);
+    return [el.getBoundingClientRect().height, style.backgroundColor, style.color, style.borderTopColor, style.fontSize, style.lineHeight];
+  });
+  const secondary = await appearance('清理');
+  const primary = await appearance('开始输入');
+  expect(secondary).toEqual([26, 'rgb(229, 229, 229)', 'rgb(37, 37, 37)', 'rgb(170, 170, 170)', '13px', '20px']);
+  expect(primary).toEqual([26, 'rgb(50, 103, 152)', 'rgb(255, 255, 255)', 'rgb(36, 78, 117)', '13px', '20px']);
+  await page.locator('.window').screenshot({ path: 'test-results/approved-input.png' });
+  await page.locator('#settings-tab').click();
+  expect(await appearance('恢复默认')).toEqual(secondary);
+  await expect(page.locator('#shortcut')).toHaveCSS('background-color', 'rgb(250, 250, 250)');
+  await page.locator('.window').screenshot({ path: 'test-results/approved-settings.png' });
+  await page.locator('#about-tab').click();
+  expect(await appearance('检查更新')).toEqual(secondary);
+  expect(await appearance('MIT 许可证')).toEqual(secondary);
+  await page.getByRole('button', { name: 'MIT 许可证' }).click();
+  expect(await appearance('返回关于')).toEqual(secondary);
+  await page.getByRole('button', { name: '返回关于' }).click();
+  await page.getByRole('button', { name: '检查更新' }).click();
+  expect(await appearance('下载更新')).toEqual(primary);
+  await page.getByRole('button', { name: '下载更新' }).click();
+  await page.mouse.move(0, 0);
+  expect(await appearance('安装并重启')).toEqual(primary);
+  await page.locator('.window').screenshot({ path: 'test-results/approved-about.png' });
+  await page.getByRole('button', { name: '安装并重启', exact: true }).click();
+  expect(await appearance('暂不安装')).toEqual(secondary);
+  expect(await appearance('确认安装并重启')).toEqual(primary);
+  const confirmation = (await page.locator('.update-confirmation').boundingBox())!;
+  const confirmButton = (await page.getByRole('button', { name: '确认安装并重启' }).boundingBox())!;
+  expect(confirmButton.x + confirmButton.width).toBeCloseTo(confirmation.x + confirmation.width, 1);
+  await expect(page.locator('.update-actions')).toHaveCSS('gap', '4px');
+  await page.getByRole('button', { name: '暂不安装' }).click();
+  await page.locator('#input-tab').click();
+  await page.locator('#clear').hover();
+  await expect(page.locator('#clear')).toHaveCSS('background-color', 'rgb(249, 234, 232)');
+  await page.locator('#start').hover();
+  await expect(page.locator('#start')).toHaveCSS('border-color', 'rgb(30, 66, 100)');
+  await page.mouse.down();
+  await expect(page.locator('#start')).toHaveCSS('border-color', 'rgb(25, 55, 82)');
+  await page.mouse.move(0, 0); await page.mouse.up();
+  await page.evaluate(() => window.relayTest.push({ phase: 'typing' }));
+  await expect(page.locator('#source')).toHaveCSS('background-color', 'rgb(250, 250, 250)');
+  await expect(page.locator('#start')).toHaveCSS('color', 'rgb(133, 133, 133)');
 });
 
 test('hidden settings exit focus order and title buttons invoke native actions', async ({ page }) => {

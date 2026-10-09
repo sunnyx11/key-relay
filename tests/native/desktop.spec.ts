@@ -75,6 +75,28 @@ test(`packaged WebView2 window, pin and cleanup (${session} session)`, async () 
     await page.locator('#start').click();
     await expect(page.locator('#status-message')).toContainText('已取消');
     await expect(page.locator('#source')).toHaveValue('中文 Native IPC');
+    await page.locator('#source').fill('  中文  \nA\t');
+    await page.getByRole('button', { name: '清理', exact: true }).click();
+    await expect(page.locator('#source')).toHaveValue('  中文\nA');
+    await expect(page.locator('#text-count')).toHaveText('6 个字符');
+    for (const [key, value] of [
+      ['Control+z', '  中文  \nA'], ['Control+z', '  中文  \nA\t'],
+      ['Control+y', '  中文  \nA'], ['Control+y', '  中文\nA'],
+    ]) {
+      await page.keyboard.press(key); await expect(page.locator('#source')).toHaveValue(value);
+    }
+    await page.locator('#start').click();
+    await expect(page.locator('#start')).toHaveText('取消输入');
+    await expect(page.locator('#status-message')).toContainText('剩余');
+    await expect(page.locator('#trim-trailing')).toBeDisabled();
+    const cleanedTask = await page.evaluate(() => {
+      const runtime = window as unknown as { __TAURI_INTERNALS__: { invoke: (command: string) => Promise<{ total: number }> } };
+      return runtime.__TAURI_INTERNALS__.invoke('get_snapshot');
+    });
+    expect(cleanedTask.total).toBe(6);
+    await page.locator('#start').click();
+    await page.mouse.move(0, 0);
+    await page.screenshot({ path: `test-results/native-cleanup-${session}.png` });
     await page.locator('#source').evaluate(el => { el.style.height = '320px'; });
     await expect.poll(() => page.evaluate(() => innerHeight)).toBeGreaterThan(450);
     await page.locator('#source').evaluate(el => { el.style.height = '184px'; });

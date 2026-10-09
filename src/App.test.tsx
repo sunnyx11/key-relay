@@ -230,8 +230,44 @@ describe('editor and native task integration', () => {
     fireEvent.click(screen.getByRole('button', { name: '开始输入' }));
     await waitFor(() => expect(bridge.start).toHaveBeenCalledWith(expect.objectContaining({ text: '中😀\nA', settings: defaults })));
     expect(screen.getByRole('tab', { name: '设置' })).toBeDisabled();
-    fireEvent.click(screen.getByRole('button', { name: '取消输入（剩余 5 秒）' }));
+    expect(document.getElementById('status-message')).toHaveTextContent('等待输入，剩余 5 秒，请选择输入位置。');
+    act(() => notify({ ...initial, sequence: 3, phase: 'countdown', remainingSeconds: 4, message: '等待输入，请在倒计时结束前选择输入位置' }));
+    expect(document.getElementById('status-message')).toHaveTextContent('等待输入，剩余 4 秒，请选择输入位置。');
+    fireEvent.click(screen.getByRole('button', { name: '取消输入' }));
     await waitFor(() => expect(bridge.cancel).toHaveBeenCalled());
+  });
+  it('keeps text actions disabled while empty or protected by task and installation state', async () => {
+    render(<App />);
+    const cleanup = screen.getByRole('button', { name: '清理' });
+    const clear = screen.getByRole('button', { name: '清空' });
+    expect(cleanup).toBeDisabled(); expect(clear).toBeDisabled();
+    await waitFor(() => expect(screen.getByRole('button', { name: '开始输入' })).toBeEnabled());
+    expect(cleanup).toBeDisabled(); expect(clear).toBeDisabled();
+    fireEvent.input(screen.getByRole('textbox'), { target: { value: 'text  ' } });
+    expect(cleanup).toBeEnabled(); expect(clear).toBeEnabled();
+    let sequence = initial.sequence;
+    for (const phase of ['arming', 'countdown', 'typing'] as const) {
+      act(() => notify({ ...initial, sequence: ++sequence, phase }));
+      expect(cleanup).toBeDisabled(); expect(clear).toBeDisabled();
+    }
+    act(() => notify({ ...initial, sequence: ++sequence, phase: 'stopped', interactionBlocked: true }));
+    expect(cleanup).toBeDisabled(); expect(clear).toBeDisabled();
+    act(() => notify({ ...initial, sequence: ++sequence, phase: 'stopped', interactionBlocked: false }));
+    expect(cleanup).toBeEnabled(); expect(clear).toBeEnabled();
+    act(() => updateNotify({ ...updateInitial, sequence: 2, phase: 'installing' }));
+    expect(cleanup).toBeDisabled(); expect(clear).toBeDisabled();
+    expect(screen.getByRole('textbox')).toHaveAttribute('readonly');
+  });
+  it('blocks text actions while a start command is pending', async () => {
+    let finishStart!: (state: Snapshot) => void;
+    vi.mocked(bridge.start).mockImplementation(() => new Promise(resolve => { finishStart = resolve; }));
+    await mount();
+    fireEvent.input(screen.getByRole('textbox'), { target: { value: 'text  ' } });
+    fireEvent.click(screen.getByRole('button', { name: '开始输入' }));
+    expect(screen.getByRole('button', { name: '清理' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: '清空' })).toBeDisabled();
+    await waitFor(() => expect(bridge.start).toHaveBeenCalled());
+    await act(async () => finishStart({ ...initial, sequence: 2, phase: 'countdown', remainingSeconds: 5 }));
   });
   it('locates invalid settings and allows restoration', async () => {
     await mount(); fireEvent.input(screen.getByRole('textbox'), { target: { value: 'text' } });
@@ -255,14 +291,15 @@ describe('editor and native task integration', () => {
     fireEvent.click(screen.getByRole('button', { name: '清空' }), { detail: 1 });
     expect(screen.getByRole('textbox')).toHaveValue('keep');
   });
-  it('preserves disabled actions when the native stop event precedes pointerdown', async () => {
-    await mount(); fireEvent.input(screen.getByRole('textbox'), { target: { value: 'keep' } });
-    act(() => notify({ ...initial, sequence: 10, phase: 'stopped', ...{ interactionBlocked: true } }));
-    expect(screen.getByRole('button', { name: '清空' })).toBeDisabled();
-    fireEvent.pointerDown(screen.getByRole('button', { name: '清空' }));
-    act(() => notify({ ...initial, sequence: 11, phase: 'stopped', ...{ interactionBlocked: false } }));
-    fireEvent.click(screen.getByRole('button', { name: '清空' }), { detail: 1 });
-    expect(screen.getByRole('textbox')).toHaveValue('keep');
+  it.each(['清理', '清空'])('preserves %s when the native stop event precedes pointerdown', async name => {
+    await mount(); fireEvent.input(screen.getByRole('textbox'), { target: { value: 'keep  ' } });
+    act(() => notify({ ...initial, sequence: 10, phase: 'stopped', interactionBlocked: true }));
+    const button = screen.getByRole('button', { name });
+    expect(button).toBeDisabled();
+    fireEvent.pointerDown(button);
+    act(() => notify({ ...initial, sequence: 11, phase: 'stopped', interactionBlocked: false }));
+    fireEvent.click(button, { detail: 1 });
+    expect(screen.getByRole('textbox')).toHaveValue('keep  ');
   });
   it('persists valid settings before an immediate start', async () => {
     await mount(); fireEvent.input(screen.getByRole('textbox'), { target: { value: 'text' } });

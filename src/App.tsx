@@ -21,6 +21,7 @@ export default function App() {
   const containerRef = useRef<HTMLElement>(null);
   const active = ['arming', 'countdown', 'typing'].includes(relay.snapshot.phase);
   const busy = active || !!relay.snapshot.interactionBlocked || installing;
+  const editingDisabled = busy || relay.pending || !relay.ready;
   const report = (error: unknown) => relay.setNotice({ text: String(error), error: true });
   const tabDisabled = (name: typeof tab) => installing || (name === 'about' ? busy || relay.pending || !relay.ready : name === 'settings' && relay.snapshot.phase === 'countdown');
 
@@ -84,8 +85,29 @@ export default function App() {
     if (invalid) { flushSync(() => setTab('settings')); document.getElementById(invalid)?.focus(); return; }
     void relay.start();
   };
+  const trimTrailing = () => {
+    if (editingDisabled || !relay.text.length) return;
+    const source = sourceRef.current!;
+    const trailingSpaces = [...source.value.matchAll(/[ \t]+$/gm)];
+    if (!trailingSpaces.length) {
+      relay.setNotice({ text: '当前文本没有行尾空格。', error: false });
+      return;
+    }
+    source.focus();
+    // Delete backwards to keep offsets valid and each line in native undo history.
+    for (const match of trailingSpaces.reverse()) {
+      source.setSelectionRange(match.index, match.index + match[0].length);
+      if (!document.execCommand('delete')) {
+        relay.updateText(source.value);
+        report('去除行尾空格未完成，请重试');
+        return;
+      }
+    }
+    relay.updateText(source.value);
+    relay.setNotice({ text: '已去除行尾空格，可按 Ctrl+Z 逐行撤销。', error: false });
+  };
   const clear = () => {
-    if (busy || !relay.text.length) return;
+    if (editingDisabled || !relay.text.length) return;
     const source = sourceRef.current!; source.focus(); source.select();
     if (!document.execCommand('delete')) { report('清空未完成，可在编辑框中全选并按 Delete。'); return; }
     relay.updateText(source.value); relay.setNotice({ text: '已清空，按 Ctrl+Z 撤销。', error: false });
@@ -104,10 +126,10 @@ export default function App() {
       <nav className="tabs" role="tablist" aria-label="功能页签">
         {tabs.map(({ name, label }) => <button key={name} id={`${name}-tab`} className="tab" role="tab" aria-selected={tab === name} aria-controls={`${name}-panel`} tabIndex={tab === name ? 0 : -1} disabled={tabDisabled(name)} onClick={() => setTab(name)} onKeyDown={tabKey}>{label}{name === 'about' && ['available', 'ready'].includes(updates.snapshot.phase) && <span className="update-indicator" title="有新版本" aria-hidden="true" />}</button>)}
       </nav>
-      <InputPanel hidden={tab !== 'input'} busy={busy || relay.pending || !relay.ready} text={relay.text} sourceRef={sourceRef} onInput={relay.updateText} />
+      <InputPanel hidden={tab !== 'input'} busy={editingDisabled} sourceRef={sourceRef} onInput={relay.updateText} />
       <SettingsPanel hidden={tab !== 'settings'} busy={busy || !relay.ready} settings={relay.settings} shortcutError={relay.snapshot.shortcutError} onChange={relay.updateSettings} />
       <AboutPanel hidden={tab !== 'about'} updates={updates} beforeInstall={relay.flushSettings} />
-      <TaskFooter hidden={tab !== 'input'} snapshot={relay.snapshot} settings={relay.settings} ready={relay.ready && !relay.snapshot.interactionBlocked && !installing} pending={relay.pending} notice={relay.notice} onStart={start} onClear={clear} />
+      <TaskFooter hidden={tab !== 'input'} text={relay.text} snapshot={relay.snapshot} settings={relay.settings} ready={relay.ready && !relay.snapshot.interactionBlocked && !installing} pending={relay.pending} notice={relay.notice} onStart={start} onTrimTrailing={trimTrailing} onClear={clear} />
     </div>
   </main>;
 }

@@ -63,7 +63,7 @@ export function AboutPanel({ hidden, updates, beforeInstall }: { hidden: boolean
           <p className="about-contact"><span>联系邮箱</span><a href="mailto:hkhl888@foxmail.com" onClick={event => { void open(event); }}>hkhl888@foxmail.com</a></p>
           {linkError && <p className="about-error" role="alert">{linkError}</p>}
         </div>
-        <div className="about-legal"><span>© 2026 sunnyx11</span><button className="text-button" ref={licenseButton} onClick={() => changeView(true)}>MIT 许可证</button></div>
+        <div className="about-legal"><span>© 2026 sunnyx11</span><button className="button" ref={licenseButton} onClick={() => changeView(true)}>MIT 许可证</button></div>
       </>}
     </div>
   </section>;

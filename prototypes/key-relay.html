@@ -20,9 +20,14 @@
       --accent-surface: #e5eff8;
       --primary-hover: #2b5b88;
       --primary-active: #244e75;
+      --primary-line: #244e75;
+      --primary-hover-line: #1e4264;
+      --primary-active-line: #193752;
       --title-text: #5c5c5c;
-      --button-text: #505050;
-      --button-line: #bdbdbd;
+      --button-text: var(--text);
+      --button-line: var(--control-line);
+      --tool-danger: #f9eae8;
+      --tooltip-surface: #333;
       --success: #287044;
       --error: #a13d32;
       --focus: #3977ad;
@@ -67,28 +72,32 @@
     .panel { display: flex; flex-direction: column; grid-area: 2 / 1; min-height: 258px; padding: 12px 0 0; }
     .panel[hidden] { display: flex !important; visibility: hidden; }
     .panel > * { flex-shrink: 0; }
-    .footer-actions { display: flex; flex: 0 0 auto; align-items: center; gap: 6px; }
-    .start-slot { display: flex; justify-content: flex-end; width: 172px; }
+    .footer-actions { display: flex; flex: 0 0 auto; align-items: center; gap: 8px; }
     textarea { display: block; width: 100%; border: 1px solid var(--control-line); border-radius: 0; background: var(--paper); padding: 9px 10px; line-height: 1.8; resize: vertical; }
     #source:focus-visible, #shortcut:focus-visible { outline-offset: -2px; }
     textarea::placeholder { color: var(--placeholder); }
     #source { flex-grow: 1; height: 184px; min-height: 130px; }
     textarea[readonly] { background: #fafafa; }
-    .editor-meta { display: flex; justify-content: space-between; gap: 8px; color: var(--muted); margin-top: 6px; font-size: 12px; }
-    #text-count { white-space: nowrap; }
+    #text-count { white-space: nowrap; color: var(--muted); font-size: 12px; margin-right: 2px; }
+    .button-group { display: flex; align-items: center; flex-wrap: wrap; justify-content: flex-end; gap: 4px; }
     input[type="number"] { height: 30px; width: 66px; padding: 2px 7px; border: 1px solid var(--control-line); background: var(--paper); }
     .footer { grid-area: 3 / 1; margin: 0 -14px; padding: 6px 14px 8px; display: flex; align-items: center; justify-content: space-between; gap: 16px; }
     #status-message { display: flex; align-items: center; margin: 0; flex: 1; min-width: 0; min-height: 3.4em; color: var(--muted); font-size: 13px; font-weight: 400; line-height: 1.7; overflow-wrap: anywhere; }
     #status-message:is([data-state="countdown"], [data-state="arming"], [data-state="typing"]) { color: var(--accent); }
     #status-message[data-state="done"] { color: var(--success); }
     #status-message[data-state="error"] { color: var(--error); }
-    .button { min-height: 26px; padding: 2px 8px; border: 1px solid var(--button-line); font-size: 13px; color: var(--button-text); background: #fafafa; white-space: nowrap; }
+    .button { min-height: 26px; padding: 2px 8px; border: 1px solid var(--button-line); font-size: 13px; line-height: 20px; color: var(--button-text); background: #e5e5e5; white-space: nowrap; }
     .button:hover:enabled { color: var(--text); background: #f1f1f1; border-color: #929292; }
-    .button:active:enabled { background: #e8e8e8; }
-    .button.primary:enabled { color: var(--paper); background: var(--accent); border-color: var(--accent); }
-    .button.primary:hover:enabled { background: var(--primary-hover); border-color: var(--primary-hover); }
-    .button.primary:active:enabled { background: var(--primary-active); border-color: var(--primary-active); }
+    .button:active:enabled { background: #d7d7d7; }
+    .button.tool-button { position: relative; width: 44px; height: 26px; }
+    .button.tool-button.danger:hover:enabled { color: var(--error); background: var(--tool-danger); border-color: var(--error); }
+    .tool-button::after { content: attr(data-tooltip); position: absolute; z-index: 2; bottom: calc(100% + 6px); left: 50%; transform: translateX(-50%); padding: 4px 7px; color: var(--paper); background: var(--tooltip-surface); font-size: 12px; line-height: 1.5; white-space: nowrap; visibility: hidden; pointer-events: none; }
+    .tool-button:hover::after, .tool-button:focus-visible::after { visibility: visible; }
+    .button.primary:enabled { color: var(--paper); background: var(--accent); border-color: var(--primary-line); }
+    .button.primary:hover:enabled { background: var(--primary-hover); border-color: var(--primary-hover-line); }
+    .button.primary:active:enabled { background: var(--primary-active); border-color: var(--primary-active-line); }
     .primary { min-width: 72px; flex: 0 0 auto; }
+    #start { width: 72px; }
     .settings-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
     .settings-heading h2 { margin: 0; font-size: 14px; font-weight: 400; }
     .setting-row { display: grid; grid-template-columns: minmax(0, 1fr) 156px; align-items: center; gap: 4px 16px; }
@@ -114,13 +123,15 @@
     .about-description { margin: 0; line-height: 1.7; }
     .about-support { border-top: 1px solid var(--line); padding-top: 8px; }
     .about-support nav { display: flex; flex-wrap: wrap; gap: 8px 22px; }
-    .about-content a, .text-button { color: var(--accent); text-decoration: none; overflow-wrap: anywhere; }
-    .about-content a:hover, .text-button:hover { text-decoration: underline; }
+    .about-content a { color: var(--accent); text-decoration: none; overflow-wrap: anywhere; }
+    .about-content a:hover { text-decoration: underline; }
     .about-content a:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
     .about-contact { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 8px 0 0; }
     .about-contact span { color: var(--muted); }
     .update-indicator { display: inline-block; width: 5px; height: 5px; background: var(--accent); margin-left: 5px; vertical-align: middle; }
     .update-section { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; border-top: 1px solid var(--line); padding-top: 8px; }
+    .update-section > .button { align-self: flex-end; }
+    .update-confirmation { width: 100%; }
     .update-summary { display: flex; width: 100%; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 16px; }
     .update-summary .update-status { flex: 1 1 140px; }
     .update-heading { display: flex; width: 100%; align-items: center; justify-content: space-between; gap: 8px; }
@@ -130,9 +141,8 @@
     .update-status, .update-hint, .update-confirmation p { margin: 0; font-size: 12px; line-height: 1.7; overflow-wrap: anywhere; }
     .update-hint { color: var(--muted); }
     .update-section progress { width: 100%; height: 8px; accent-color: var(--accent); }
-    .update-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; margin-top: 8px; }
+    .update-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 4px; margin-top: 8px; }
     .about-legal { margin-top: auto; display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px 16px; color: var(--muted); font-size: 12px; }
-    .text-button { border: 0; padding: 0; background: transparent; font-size: inherit; }
     .license-heading { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
     .license-heading h2 { font-size: 14px; font-weight: 400; margin: 0; }
     .license-text { margin: 0; font: inherit; font-size: 12px; line-height: 1.7; white-space: pre-wrap; overflow-wrap: anywhere; }
@@ -143,12 +153,11 @@
     .preview-note { margin: 8px 0 0; line-height: 1.8; font-size: 11px; }
     @container (max-width: 560px) {
       .footer { align-items: stretch; flex-direction: column; gap: 8px; }
-      .footer-actions { align-self: flex-end; }
+      .footer-actions { align-self: flex-end; flex-wrap: wrap; justify-content: flex-end; }
     }
     @media (max-width: 520px) {
       .stage { width: calc(100% - 20px); margin-top: 16px; }
       .workspace { padding: 8px 12px 0; }
-      .editor-meta { flex-wrap: wrap; }
       .footer { margin: 0 -12px; padding: 6px 12px 8px; }
       .setting-row { grid-template-columns: minmax(0, 1fr) 144px; column-gap: 12px; }
     }
@@ -177,8 +186,7 @@
           <button class="tab" id="about-tab" role="tab" aria-selected="false" aria-controls="about-panel" tabindex="-1">关于</button>
         </nav>
         <section class="panel" id="input-panel" role="tabpanel" aria-labelledby="input-tab">
-          <textarea id="source" spellcheck="false" placeholder="在此输入或粘贴文本…" aria-label="待输入文本" aria-describedby="text-count text-note"></textarea>
-          <div class="editor-meta"><span id="text-count">0 个字符</span><span id="text-note">保留空格与换行</span></div>
+          <textarea id="source" spellcheck="false" placeholder="在此输入或粘贴文本…" aria-label="待输入文本" aria-describedby="text-count status-message"></textarea>
         </section>
         <section class="panel" id="settings-panel" role="tabpanel" aria-labelledby="settings-tab" hidden inert>
           <div class="settings-heading"><h2>输入设置</h2><button class="button" id="restore">恢复默认</button></div>
@@ -225,7 +233,7 @@
               <nav aria-label="项目支持"><a href="https://github.com/sunnyx11/key-relay" target="_blank" rel="noopener noreferrer">项目主页</a><a href="https://github.com/sunnyx11/key-relay#readme" target="_blank" rel="noopener noreferrer">使用说明</a><a href="https://github.com/sunnyx11/key-relay/issues" target="_blank" rel="noopener noreferrer">问题反馈</a></nav>
               <p class="about-contact"><span>联系邮箱</span><a href="mailto:hkhl888@foxmail.com">hkhl888@foxmail.com</a></p>
             </div>
-            <div class="about-legal"><span>© 2026 sunnyx11</span><button class="text-button" id="show-license">MIT 许可证</button></div>
+            <div class="about-legal"><span>© 2026 sunnyx11</span><button class="button" id="show-license">MIT 许可证</button></div>
           </div>
           <div class="about-content" id="license-view" hidden>
             <div class="license-heading"><h2>MIT 许可证</h2><button class="button" id="back-about">返回关于</button></div>
@@ -255,7 +263,14 @@ SOFTWARE.
         </section>
         <footer class="footer">
           <p id="status-message" role="status" aria-live="polite" data-state="idle">点击后等待 5 秒，请在此期间选择输入位置。</p>
-          <div class="footer-actions"><div class="start-slot"><button class="button primary" id="start">开始输入</button></div><button class="button" id="clear" title="清空文本后可按 Ctrl+Z 撤销">清空</button></div>
+          <div class="footer-actions">
+            <span id="text-count">0 个字符</span>
+            <div class="button-group" role="group" aria-label="输入操作">
+              <button class="button tool-button" id="trim-trailing" aria-label="清理" aria-description="去除每行末尾的空格和制表符，保留缩进与换行。可按 Ctrl+Z 逐行撤销。" data-tooltip="去除行尾空格" disabled>清理</button>
+              <button class="button tool-button danger" id="clear" aria-label="清空" aria-description="清空编辑框中的文本。可按 Ctrl+Z 撤销。" data-tooltip="清空文本" disabled>清空</button>
+              <button class="button primary" id="start">开始输入</button>
+            </div>
+          </div>
         </footer>
       </div>
     </section>
@@ -275,6 +290,7 @@ SOFTWARE.
       const interval = document.querySelector('#interval');
       const shortcut = document.querySelector('#shortcut');
       const start = document.querySelector('#start');
+      const trimTrailing = document.querySelector('#trim-trailing');
       const message = document.querySelector('#status-message');
       const tabs = [...document.querySelectorAll('[role="tab"]')];
       const pin = document.querySelector('.pin');
@@ -351,13 +367,15 @@ SOFTWARE.
           : `${heading}，${description}`;
         if (busy() && tabs[2].getAttribute('aria-selected') === 'true') tabs[0].click();
         syncControls();
-        if (next !== 'countdown') start.textContent = next === 'typing' ? '正在输入…' : '开始输入';
+        start.textContent = next === 'countdown' ? '取消输入' : next === 'typing' ? '输入中…' : '开始输入';
       }
 
       function syncControls() {
         const blocked = busy() || interactionBlocked;
         source.readOnly = blocked;
-        for (const control of [delay, interval, shortcut, document.querySelector('#clear'), document.querySelector('#restore'), pin, tabs[2]]) control.disabled = blocked;
+        trimTrailing.disabled = blocked || !source.value.length;
+        document.querySelector('#clear').disabled = blocked || !source.value.length;
+        for (const control of [delay, interval, shortcut, document.querySelector('#restore'), pin, tabs[2]]) control.disabled = blocked;
         start.disabled = interactionBlocked || state === 'typing' || state === 'arming';
         tabs[1].disabled = state === 'countdown';
       }
@@ -441,7 +459,8 @@ SOFTWARE.
         function tick() {
           const remaining = deadline - performance.now();
           if (remaining <= 0) { beginTyping(); return; }
-          start.textContent = `取消输入（剩余 ${Math.ceil(remaining / 1000)} 秒）`;
+          const text = `等待输入，剩余 ${Math.ceil(remaining / 1000)} 秒，请选择输入位置。`;
+          if (message.textContent !== text) message.textContent = text;
           timer = setTimeout(tick, Math.min(100, remaining));
         }
         tick();
@@ -584,6 +603,27 @@ SOFTWARE.
       document.querySelector('#back-about').addEventListener('click', () => showLicense(false));
 
       source.addEventListener('input', updateCount);
+      trimTrailing.addEventListener('click', () => {
+        if (busy() || interactionBlocked || !source.value.length) return;
+        const trailingSpaces = [...source.value.matchAll(/[ \t]+$/gm)];
+        if (!trailingSpaces.length) {
+          setStatus('idle');
+          message.textContent = '当前文本没有行尾空格。';
+          return;
+        }
+        source.focus();
+        // Delete from the end to preserve offsets and native undo/redo for each line.
+        for (const match of trailingSpaces.reverse()) {
+          source.setSelectionRange(match.index, match.index + match[0].length);
+          if (!document.execCommand('delete')) {
+            updateCount();
+            setStatus('error', '去除行尾空格未完成', '请重试');
+            return;
+          }
+        }
+        updateCount();
+        message.textContent = '已去除行尾空格，可按 Ctrl+Z 逐行撤销。';
+      });
       document.querySelector('#clear').addEventListener('click', () => {
         if (busy() || !source.value.length) return;
         source.focus();
