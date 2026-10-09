@@ -9,10 +9,11 @@
 .tab { height: 28px; min-width: 64px; padding: 3px 15px; border: 1px solid transparent; border-bottom: 0; background: transparent; position: relative; color: var(--muted); }
 .tab[aria-selected="true"] { background: var(--surface); border-color: var(--line); color: var(--text); top: 1px; height: 29px; }
 .tab:hover:enabled:not([aria-selected="true"]) { background: var(--tab-hover); }
-.panel { display: flex; flex-direction: column; grid-area: 2 / 1; min-height: 258px; padding: 12px 0 0; }
+.panel { display: flex; flex-direction: column; grid-area: 2 / 1; min-height: 238px; padding: 12px 0 0; }
 .panel[hidden] { display: flex !important; visibility: hidden; }
 .panel > * { flex-shrink: 0; }
-#source { flex-grow: 1; height: 184px; min-height: 130px; }
+#settings-panel { grid-row: 2 / 4; }
+#source { flex-grow: 1; height: 226px; min-height: 226px; }
 #text-count { white-space: nowrap; color: var(--muted); font-size: 12px; margin-right: 2px; }
 .footer { grid-area: 3 / 1; margin: 0 -14px; padding: 6px 14px 8px; display: flex; align-items: center; justify-content: space-between; gap: 16px; }
 #status-message { display: flex; align-items: center; margin: 0; flex: 1; min-width: 0; min-height: 3.4em; color: var(--muted); font-size: 13px; font-weight: 400; line-height: 1.7; overflow-wrap: anywhere; }

@@ -246,11 +246,18 @@ test('layout matches widths, breakpoints, editor resizing and zoom', async ({ pa
   await openApp(page);
   for (const width of [600, 563, 562, 521, 520, 421, 420, 390, 320]) {
     await page.setViewportSize({ width, height: 1100 });
-    for (const height of [184, 320]) {
+    for (const height of [226, 320, 1]) {
       await page.locator('#source').evaluate((el, value) => { el.style.height = value + 'px'; }, height);
+      const editor = (await page.locator('#source').boundingBox())!;
+      expect(editor.height).toBeGreaterThanOrEqual(226);
+      if (width === 600) expect(editor.height).toBe(Math.max(226, height));
+      const footer = (await page.locator('.footer').boundingBox())!;
+      expect(footer.y - editor.y - editor.height).toBeLessThanOrEqual(1);
       const inputHeight = (await page.locator('.window').boundingBox())!.height;
       await page.locator('#settings-tab').click();
       expect((await page.locator('.window').boundingBox())!.height).toBe(inputHeight);
+      const note = (await page.locator('.setting-note').boundingBox())!;
+      expect(note.y + note.height).toBeLessThan(inputHeight);
       await expect(page.locator('#start')).not.toBeVisible();
       if (width <= 420) {
         expect(await page.locator('.setting-row').evaluateAll(rows => rows.every(row => row.children[1].getBoundingClientRect().top >= row.children[0].getBoundingClientRect().bottom))).toBe(true);

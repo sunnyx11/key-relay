@@ -101,9 +101,12 @@ async page => {
       check(await page.locator('#about-tab').count() === 1, 'About tab missing');
       for (const width of [1180, 560, 390, 320]) {
         await page.setViewportSize({ width, height: 1200 });
-        for (const height of [184, 320]) {
+        for (const height of [226, 320, 1]) {
           await page.locator('#input-tab').click();
           await page.locator('#source').evaluate((el, value) => { el.style.height = value + 'px'; }, height);
+          const editor = await page.locator('#source').boundingBox();
+          check(editor.height >= 226, 'Editor shrank below the minimum height');
+          if (width === 1180) check(editor.height === Math.max(226, height), 'Desktop editor height differs from the requested size');
           const input = await page.locator('.window').boundingBox();
           for (const tab of ['settings', 'about']) {
             await page.locator(`#${tab}-tab`).click();
@@ -366,7 +369,7 @@ async page => {
         await page.setViewportSize({ width, height: 1000 });
         const editor = await page.locator('#source').boundingBox();
         const footer = await page.locator('.footer').boundingBox();
-        check(editor.height > 184, 'Narrow editor must use the additional panel space');
+        check(editor.height > 226, 'Narrow editor must use the additional panel space');
         check(footer.y - editor.y - editor.height <= 16, 'Unused space separates text editor from the footer');
         await page.locator('#settings-tab').click();
         const settings = await page.locator('.window').boundingBox();
@@ -481,7 +484,7 @@ async page => {
     ['Panel height is stable across sizes and editor resize', async () => {
       for (const width of [1180, 390, 320]) {
         await page.setViewportSize({ width, height: 1000 });
-        for (const sourceHeight of [184, 320]) {
+        for (const sourceHeight of [226, 320]) {
           await page.locator('#input-tab').click();
           await page.locator('#source').evaluate((el, height) => { el.style.height = height + 'px'; }, sourceHeight);
           const input = await page.locator('.window').boundingBox();

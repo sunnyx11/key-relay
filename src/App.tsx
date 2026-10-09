@@ -61,7 +61,7 @@ export default function App() {
         do {
           resizePending = false;
           if (await appWindow.isMaximized() || disposed) return;
-          const height = Math.max(360, Math.ceil(container.getBoundingClientRect().height));
+          const height = Math.max(364, Math.ceil(container.getBoundingClientRect().height));
           if (Math.abs(window.innerHeight - height) > 1) await appWindow.setSize(new LogicalSize(window.innerWidth, height));
         } while (resizePending && !disposed);
       } finally { resizing = false; }

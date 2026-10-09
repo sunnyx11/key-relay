@@ -199,10 +199,10 @@ describe('editor and native task integration', () => {
     const { unmount } = render(<App />);
     try {
       await waitFor(() => expect(sizingWindow.setSize).toHaveBeenCalledWith(expect.objectContaining({ height: 410 })));
-      rect.mockReturnValue({ height: 379 } as DOMRect);
+      rect.mockReturnValue({ height: 353.2 } as DOMRect);
       act(() => resized([], {} as ResizeObserver));
       await act(async () => finishResize());
-      await waitFor(() => expect(sizingWindow.setSize).toHaveBeenLastCalledWith(expect.objectContaining({ height: 379 })));
+      await waitFor(() => expect(sizingWindow.setSize).toHaveBeenLastCalledWith(expect.objectContaining({ height: 364 })));
     } finally { unmount(); rect.mockRestore(); }
   });
   it('remeasures viewport changes received while resizing', async () => {

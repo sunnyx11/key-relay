@@ -17,7 +17,9 @@ test(`packaged WebView2 window, pin and cleanup (${session} session)`, async () 
     const page = context.pages()[0];
     page.on('pageerror', error => errors.push(error.message));
     await expect(page.locator('#start')).toBeEnabled();
-    await expect.poll(() => page.evaluate(() => Math.abs(innerHeight - Math.max(360, document.querySelector('.window')!.getBoundingClientRect().height)))).toBeLessThan(2);
+    await expect(page.locator('#source')).toHaveCSS('height', '226px');
+    await expect.poll(() => page.evaluate(() => Math.abs(innerHeight - document.querySelector('.window')!.getBoundingClientRect().height))).toBeLessThan(2);
+    await page.screenshot({ path: `test-results/native-input-minimum-${session}.png` });
     const originalHeight = await page.evaluate(() => innerHeight);
     await page.locator('#about-tab').click();
     await expect(page.getByText(`版本 ${config.version} · Windows 64 位`)).toBeVisible();
@@ -99,11 +101,12 @@ test(`packaged WebView2 window, pin and cleanup (${session} session)`, async () 
     await page.screenshot({ path: `test-results/native-cleanup-${session}.png` });
     await page.locator('#source').evaluate(el => { el.style.height = '320px'; });
     await expect.poll(() => page.evaluate(() => innerHeight)).toBeGreaterThan(450);
-    await page.locator('#source').evaluate(el => { el.style.height = '184px'; });
+    await page.locator('#source').evaluate(el => { el.style.height = '1px'; });
     await page.locator('#clear').click();
     await expect(page.locator('#source')).toHaveValue('');
+    await expect(page.locator('#source')).toHaveCSS('height', '226px');
     await expect(page.locator('#status-message')).toContainText('已清空');
-    await expect.poll(() => page.evaluate(() => Math.abs(innerHeight - Math.max(360, document.querySelector('.window')!.getBoundingClientRect().height)))).toBeLessThan(2);
+    await expect.poll(() => page.evaluate(() => Math.abs(innerHeight - document.querySelector('.window')!.getBoundingClientRect().height))).toBeLessThan(2);
     await expect.poll(() => page.evaluate(() => innerHeight)).toBeLessThan(400);
     await page.getByRole('button', { name: '最大化或还原' }).click();
     await expect.poll(() => page.evaluate(async () => {
@@ -112,7 +115,7 @@ test(`packaged WebView2 window, pin and cleanup (${session} session)`, async () 
     })).toBe(true);
     await page.getByRole('button', { name: '最大化或还原' }).click();
     await expect.poll(() => page.evaluate(() => innerWidth)).toBe(600);
-    await expect.poll(() => page.evaluate(() => Math.abs(innerHeight - Math.max(360, document.querySelector('.window')!.getBoundingClientRect().height)))).toBeLessThan(2);
+    await expect.poll(() => page.evaluate(() => Math.abs(innerHeight - document.querySelector('.window')!.getBoundingClientRect().height))).toBeLessThan(2);
     await pin.click();
     await expect(page.getByRole('button', { name: '取消置顶' })).toHaveAttribute('aria-pressed', 'true');
     console.log('Native viewport', await page.evaluate(() => ({ width: innerWidth, height: innerHeight, scale: devicePixelRatio })));

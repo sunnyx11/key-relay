@@ -12,7 +12,7 @@
   "app": {
     "windows": [{
       "label": "main", "title": "Key Relay", "width": 600, "height": 450,
-      "minWidth": 320, "minHeight": 360, "decorations": false,
+      "minWidth": 320, "minHeight": 364, "decorations": false,
       "visible": false, "center": true, "dragDropEnabled": false
     }],
     "security": {
