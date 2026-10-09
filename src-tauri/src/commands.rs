@@ -272,15 +272,17 @@ pub async fn resume_update(runtime: &Runtime) -> Result<Snapshot, String> {
 }
 
 fn publish_phase(signals: &Signals, phase: Phase) {
-    signals.phase.store(
-        match phase {
-            Phase::Arming => 1,
-            Phase::Countdown => 2,
-            Phase::Typing => 3,
-            _ => 0,
-        },
-        Ordering::SeqCst,
-    );
+    let phase_code = match phase {
+        Phase::Arming => 1,
+        Phase::Countdown => 2,
+        Phase::Typing => 3,
+        _ => 0,
+    };
+    signals.phase.store(phase_code, Ordering::SeqCst);
+    // Keep the stopping mouse gesture protected until every button is released.
+    if phase_code == 0 && signals.mouse_buttons.load(Ordering::SeqCst) == 0 {
+        signals.stop.store(false, Ordering::SeqCst);
+    }
 }
 async fn request(
     sender: Sender<Message>,
@@ -329,4 +331,69 @@ pub async fn save_settings(
         Message::Save(settings, reply)
     })
     .await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn escape_interruption_allows_independent_mouse_operations() {
+        for phase in [Phase::Arming, Phase::Countdown, Phase::Typing] {
+            let signals = Signals::default();
+            let mut engine = Engine::new(Settings::default());
+            engine.snapshot.phase = phase;
+            publish_phase(&signals, phase);
+            signals.stop.store(true, Ordering::SeqCst);
+
+            engine.key(27, true, 1);
+            publish_phase(&signals, engine.snapshot.phase);
+            assert_eq!(engine.snapshot.phase, Phase::Stopped);
+            assert!(
+                !signals.stop.load(Ordering::SeqCst),
+                "Escape interruption must release the stop latch in {phase:?}"
+            );
+
+            signals.mouse_buttons.store(1, Ordering::SeqCst);
+            publish_phase(&signals, engine.snapshot.phase);
+            assert!(
+                !signals.stop.load(Ordering::SeqCst),
+                "An independent click must remain available after Escape"
+            );
+        }
+    }
+
+    #[test]
+    fn mouse_interruption_releases_stop_after_all_buttons_are_up() {
+        let signals = Signals::default();
+        signals.stop.store(true, Ordering::SeqCst);
+        signals.mouse_buttons.store(3, Ordering::SeqCst);
+        publish_phase(&signals, Phase::Stopped);
+        assert!(signals.stop.load(Ordering::SeqCst));
+
+        signals.mouse_buttons.store(2, Ordering::SeqCst);
+        publish_phase(&signals, Phase::Stopped);
+        assert!(signals.stop.load(Ordering::SeqCst));
+
+        signals.mouse_buttons.store(0, Ordering::SeqCst);
+        publish_phase(&signals, Phase::Stopped);
+        assert!(
+            !signals.stop.load(Ordering::SeqCst),
+            "Mouse release must end protection for the stopping gesture"
+        );
+
+        signals.mouse_buttons.store(1, Ordering::SeqCst);
+        publish_phase(&signals, Phase::Stopped);
+        assert!(!signals.stop.load(Ordering::SeqCst));
+    }
+
+    #[test]
+    fn active_phases_preserve_stop_before_the_worker_cancels() {
+        for phase in [Phase::Arming, Phase::Countdown, Phase::Typing] {
+            let signals = Signals::default();
+            signals.stop.store(true, Ordering::SeqCst);
+            publish_phase(&signals, phase);
+            assert!(signals.stop.load(Ordering::SeqCst), "phase={phase:?}");
+        }
+    }
 }
