@@ -4,6 +4,25 @@
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-10
+
+### Added
+
+- 提供行尾空白清理，删除每行末尾的普通空格和制表符，保留缩进与空行，支持逐行撤销和重做。
+
+### Changed
+
+- 输入页采用单层底部操作区，左侧显示状态，右侧依次显示字符数、清理、清空和开始输入。
+- 倒计时秒数显示在状态区，开始和取消按钮保持固定宽度。
+- 输入框最小显示高度为 226px，默认窗口为 600×364px，支持拖动增高并保持各页签等高。
+- 输入、设置、关于、许可证和更新操作统一按钮尺寸与配色，清空按钮悬停时显示红色反馈。
+
+### Fixed
+
+- 修复任务中止后控件无法恢复操作的问题，保留中止鼠标操作的释放保护。
+
+Windows 150% 系统缩放、跨显示器显示及 RDP 实际兼容性待人工验收。
+
 ## [0.2.4] - 2026-10-08
 
 ### Changed
@@ -54,7 +73,8 @@
 
 Windows 100% 系统缩放下的界面显示与 RDP 实际兼容性待人工验证。
 
-[Unreleased]: https://github.com/sunnyx11/key-relay/compare/v0.2.4...HEAD
+[Unreleased]: https://github.com/sunnyx11/key-relay/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/sunnyx11/key-relay/releases/tag/v0.3.0
 [0.2.4]: https://github.com/sunnyx11/key-relay/releases/tag/v0.2.4
 [0.2.3]: https://github.com/sunnyx11/key-relay/releases/tag/v0.2.3
 [0.2.2]: https://github.com/sunnyx11/key-relay/releases/tag/v0.2.2
