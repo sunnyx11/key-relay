@@ -6,7 +6,7 @@ key-relay 运行在本地 Windows，将准备好的文本通过模拟键盘输�
 
 ## 系统目标
 
-提供由使用者主动触发的文本输入工具。交互包含全局快捷键启动和按钮倒计时启动，详细规则及验收示例见[领域需求](../domains/text-input/requirements.md)。
+提供由使用者主动触发的文本输入工具。全局快捷键与开始按钮均激活并回点记录目标，详细规则及验收示例见[领域需求](../domains/text-input/requirements.md)。
 
 ## 主要能力
 
@@ -27,9 +27,9 @@ Spec 根目录为 `docs/`，导航入口为 `docs/index.md`。需求确认与兼
 | 技术 | 职责 |
 | --- | --- |
 | Tauri 2 | 桌面窗口、前后端通信及应用打包 |
-| React + TypeScript | 文本编辑、设置、按钮、倒计时及任务状态展示 |
+| React + TypeScript | 文本编辑、设置、按钮、目标激活及任务状态展示 |
 | Vite | 前端开发与构建 |
-| Rust | 输入任务、倒计时、发送间隔、中止判断及资源释放 |
+| Rust | 输入任务、目标记录与激活、发送间隔、中止判断及资源释放 |
 | Rust `windows` crate | 调用 Windows 原生输入与监听接口 |
 | `tauri-plugin-global-shortcut` | 全局快捷键注册与事件处理 |
 | `tauri-plugin-opener` | 关于页链接的系统浏览器与默认邮件应用调用 |

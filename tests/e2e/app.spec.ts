@@ -11,7 +11,7 @@ async function openApp(page: Page) {
     const listeners = new Map<number, string>();
     let next = 1;
     let pinned = false;
-    const state: Snapshot = { sequence: 1, phase: 'idle', sent: 0, total: 0, remainingSeconds: 0, message: '', settings: { delaySeconds: 5, intervalMs: 50, shortcut: 'F8' }, shortcutError: null };
+    const state: Snapshot = { sequence: 1, phase: 'idle', sent: 0, total: 0, target: { x: -900, y: 240, title: '记事本' }, message: '', settings: { intervalMs: 50, shortcut: 'F8' }, shortcutError: null };
     const update: UpdateSnapshot = { sequence: 1, phase: 'idle', installed: true, autoCheck: true, version: null, notes: '', downloaded: 0, total: null, message: '' };
     window.relayTest = { state, update, updatePush: patch => {
       Object.assign(update, patch, { sequence: update.sequence + 1 });
@@ -42,9 +42,9 @@ async function openApp(page: Page) {
           if (command === 'sync_draft') { window.relayTest.draft = args.draft as Draft; return; }
           if (command === 'start_task') {
             window.relayTest.draft = args.draft as Draft;
-            window.relayTest.push({ phase: 'countdown', remainingSeconds: 5, total: Array.from(window.relayTest.draft.text).length, message: '等待输入，请在倒计时结束前选择输入位置' });
+            window.relayTest.push({ phase: 'targeting', total: Array.from(window.relayTest.draft.text).length, message: '正在返回已记录的输入位置' });
           }
-          if (command === 'cancel_task') window.relayTest.push({ phase: 'stopped', remainingSeconds: 0, message: '已取消，尚未发送文本' });
+          if (command === 'cancel_task') window.relayTest.push({ phase: 'stopped', message: '已取消，尚未发送文本' });
           if (command === 'save_settings') window.relayTest.push({ settings: args.settings as Snapshot['settings'] });
           return structuredClone(state);
         },
@@ -55,6 +55,76 @@ async function openApp(page: Page) {
   await page.goto('/'); await page.waitForLoadState('networkidle');
   await expect(page.getByRole('button', { name: '开始输入' })).toBeEnabled();
 }
+
+test('recorded negative coordinates survive editing and invalidation disables button startup', async ({ page }) => {
+  await openApp(page);
+  await page.evaluate(() => window.relayTest.push({ target: null }));
+  await expect(page.locator('#start')).toBeDisabled();
+  await expect(page.locator('#status-message')).toHaveText('请先点击外部输入位置');
+  await page.evaluate(() => window.relayTest.push({ target: { x: -900, y: -240, title: '远程桌面连接' } }));
+  await expect(page.locator('#status-message')).toHaveText('已记录输入位置');
+  await page.locator('#status-message').hover();
+  await expect(page.getByRole('tooltip')).toContainText('远程桌面连接');
+  await expect(page.getByRole('tooltip')).toContainText('(-900, -240)');
+  await page.locator('#source').fill('a  ');
+  await page.locator('#trim-trailing').click();
+  await page.locator('#clear').click();
+  await page.locator('#settings-tab').click();
+  await expect(page.getByLabel('等待时间')).toHaveCount(0);
+  await page.locator('#input-tab').click();
+  await expect(page.locator('#start')).toBeEnabled();
+  expect(await page.evaluate(() => window.relayTest.state.target)).toEqual({ x: -900, y: -240, title: '远程桌面连接' });
+  await page.evaluate(() => window.relayTest.push({ phase: 'failed', target: null, message: '目标窗口或显示器位置、缩放已变化，请重新选择输入位置。' }));
+  await expect(page.locator('#start')).toBeDisabled();
+  await expect(page.locator('#status-message')).toContainText('请重新选择输入位置');
+  await page.locator('.window').screenshot({ path: 'test-results/invalid-target.png' });
+});
+
+test('target details preserve compact layout and support hover, focus and dismissal', async ({ page }) => {
+  await openApp(page);
+  await page.locator('#source').fill('text');
+  const title = 'cpub-SAS94M7_DEV-SAS94M7_DEV-CmsRdsh-S105V009.CORP.Q2BI.COM - 远程桌面连接';
+  const status = page.locator('#status-message');
+  const details = page.locator('#target-details');
+  for (const zoom of [1, 1.5]) {
+    for (const width of [600, 390, 320]) {
+      await page.setViewportSize({ width, height: 1100 });
+      await page.evaluate(value => { document.body.style.zoom = String(value); }, zoom);
+      await page.locator('#source').focus();
+      await page.mouse.move(0, 0);
+      const before = (await page.locator('.window').boundingBox())!;
+      await page.evaluate(title => window.relayTest.push({ target: { title, x: -2358, y: -584 } }), title);
+      await expect(status).toHaveText('已记录输入位置');
+      await expect(details).toBeHidden();
+      if (zoom === 1 && width === 600) await page.locator('.window').screenshot({ path: 'test-results/target-summary.png' });
+      await status.hover();
+      await expect(details).toBeVisible();
+      await expect(details).toContainText(title);
+      await expect(details).toContainText('(-2358, -584)');
+      if (zoom === 1 && width === 600) await page.locator('.window').screenshot({ path: 'test-results/target-details.png' });
+      const box = (await details.boundingBox())!;
+      expect(box.x).toBeGreaterThanOrEqual(0);
+      expect(box.x + box.width).toBeLessThanOrEqual(width);
+      expect((await page.locator('.window').boundingBox())!.height).toBe(before.height);
+      expect(await details.evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true);
+      await details.hover();
+      await expect(details).toBeVisible();
+      await page.mouse.move(0, 0);
+      await expect(details).toBeHidden();
+      await page.locator('#source').focus();
+      await page.keyboard.press('Tab');
+      await expect(status).toBeFocused();
+      await expect(details).toBeVisible();
+      await page.keyboard.press('Escape');
+      await expect(details).toBeHidden();
+      await page.keyboard.press('Tab');
+      await expect(page.getByRole('button', { name: '清理', exact: true })).toBeFocused();
+    }
+  }
+  await page.evaluate(() => window.relayTest.push({ phase: 'targeting', message: '正在激活已记录的输入位置…' }));
+  await expect(details).toHaveCount(0);
+  await expect(status).not.toHaveAttribute('tabindex');
+});
 
 test('update confirmation remains usable at 320px and preserves the editor after cancellation', async ({ page }) => {
   await openApp(page);
@@ -194,28 +264,30 @@ test('footer actions remain compact and keyboard accessible across widths and zo
       const start = boxes[2];
       await page.locator('#start').click();
       await expect(page.locator('#start')).toHaveText('取消输入');
-      await expect(page.locator('#status-message')).toHaveText('等待输入，剩余 5 秒，请选择输入位置。');
-      await page.evaluate(() => window.relayTest.push({ remainingSeconds: 4 }));
-      await expect(page.locator('#status-message')).toHaveText('等待输入，剩余 4 秒，请选择输入位置。');
-      const countdown = (await page.locator('#start').boundingBox())!;
-      expect(countdown.x).toBe(start.x); expect(countdown.y).toBe(start.y); expect(countdown.width).toBe(start.width);
+      await expect(page.locator('#status-message')).toHaveText('正在返回已记录的输入位置');
+      await page.evaluate(() => window.relayTest.push({ message: '正在返回已记录的输入位置' }));
+      await expect(page.locator('#status-message')).toHaveText('正在返回已记录的输入位置');
+      const targeting = (await page.locator('#start').boundingBox())!;
+      expect(targeting.x).toBe(start.x); expect(targeting.y).toBe(start.y); expect(targeting.width).toBe(start.width);
       await page.locator('#start').click();
     }
   }
   await page.evaluate(() => { document.body.style.zoom = '1'; });
   await page.setViewportSize({ width: 600, height: 900 });
   await page.locator('#source').focus(); await page.keyboard.press('Tab');
+  await expect(page.locator('#status-message')).toBeFocused();
+  await page.keyboard.press('Tab');
   const cleanup = page.getByRole('button', { name: '清理', exact: true });
   await expect(cleanup).toBeFocused();
   expect(await cleanup.evaluate(el => getComputedStyle(el, '::after').visibility)).toBe('visible');
   await cleanup.hover(); await expect(cleanup).toHaveAccessibleName('清理');
   await page.keyboard.press('Enter'); await expect(page.locator('#source')).toHaveValue('text');
-  await page.keyboard.press('Tab'); await page.keyboard.press('Tab');
+  await page.keyboard.press('Tab'); await page.keyboard.press('Tab'); await page.keyboard.press('Tab');
   await expect(page.getByRole('button', { name: '清空', exact: true })).toBeFocused();
   await page.keyboard.press('Space'); await expect(page.locator('#source')).toHaveValue('');
 });
 
-test('invalid fields, restoration and countdown operation', async ({ page }) => {
+test('invalid fields, restoration and targeting operation', async ({ page }) => {
   await openApp(page); await page.locator('#source').fill('ab');
   await page.getByRole('tab', { name: '设置' }).click(); await page.locator('#interval').fill('1.5');
   await expect(page.locator('#interval-error')).toBeVisible();
@@ -358,7 +430,7 @@ test('about update states use the available space at narrow widths and zoom', as
 test('about tab protects the stop gesture and task start returns to input', async ({ page }) => {
   await openApp(page); await page.locator('#source').fill('preserve');
   await page.locator('#about-tab').click();
-  await page.evaluate(() => window.relayTest.push({ phase: 'arming' }));
+  await page.evaluate(() => window.relayTest.push({ phase: 'targeting' }));
   await expect(page.locator('#input-tab')).toHaveAttribute('aria-selected', 'true');
   await expect(page.locator('#about-tab')).toBeDisabled();
   const box = (await page.locator('#about-tab').boundingBox())!;
@@ -377,9 +449,9 @@ test('task states preserve typography and footer positions', async ({ page }) =>
     return { font: [style.fontFamily, style.fontSize, style.fontWeight, style.lineHeight], x: rect.x, width: rect.width };
   });
   const baseline = await appearance(); const clear = await page.locator('#clear').boundingBox();
-  for (const [phase, message] of [['arming', '等待按键释放，松开快捷键后开始输入'], ['countdown', '等待输入，请在倒计时结束前选择输入位置'], ['typing', '已发送 1 / 3 字符 · 按 Esc 或点击鼠标停止'], ['done', '已完成，已发送 3 个字符'], ['stopped', '已中止，剩余内容已取消'], ['failed', '系统输入提交失败，请检查本地权限。']] as const) {
-    await page.evaluate(({ phase, message }) => window.relayTest.push({ phase, message, remainingSeconds: 5 }), { phase, message });
-    await expect(page.locator('#status-message')).toHaveText(phase === 'countdown' ? '等待输入，剩余 5 秒，请选择输入位置。' : message); expect(await appearance()).toEqual(baseline);
+  for (const [phase, message] of [['targeting', '正在返回已记录的输入位置'], ['typing', '已发送 1 / 3 字符 · 按 Esc 或点击鼠标停止'], ['done', '已完成，已发送 3 个字符'], ['stopped', '已中止，剩余内容已取消'], ['failed', '系统输入提交失败，请检查本地权限。']] as const) {
+    await page.evaluate(({ phase, message }) => window.relayTest.push({ phase, message }), { phase, message });
+    await expect(page.locator('#status-message')).toHaveText(phase === 'targeting' ? '正在返回已记录的输入位置' : message); expect(await appearance()).toEqual(baseline);
     expect((await page.locator('#clear').boundingBox())!.x).toBe(clear!.x);
   }
   await page.screenshot({ path: 'test-results/input-600.png', fullPage: true });

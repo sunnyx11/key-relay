@@ -16,7 +16,9 @@ test(`packaged WebView2 window, pin and cleanup (${session} session)`, async () 
     await expect.poll(() => context.pages().length).toBeGreaterThan(0);
     const page = context.pages()[0];
     page.on('pageerror', error => errors.push(error.message));
-    await expect(page.locator('#start')).toBeEnabled();
+    await expect(page.locator('#source')).toBeEditable();
+    await expect(page.locator('#start')).toBeDisabled();
+    await expect(page.locator('#status-message')).toContainText('请先点击外部输入位置');
     await expect(page.locator('#source')).toHaveCSS('height', '226px');
     await expect.poll(() => page.evaluate(() => Math.abs(innerHeight - document.querySelector('.window')!.getBoundingClientRect().height))).toBeLessThan(2);
     await page.screenshot({ path: `test-results/native-input-minimum-${session}.png` });
@@ -62,20 +64,25 @@ test(`packaged WebView2 window, pin and cleanup (${session} session)`, async () 
     await page.getByRole('button', { name: '取消置顶' }).click();
     await expect(pin).toHaveAttribute('aria-pressed', 'false');
     expect(await isPinned()).toBe(false);
-    await page.locator('#start').click(); await expect(page.locator('#status-message')).toContainText('请先填写文本');
+    await page.locator('#settings-tab').click();
+    await expect(page.getByLabel('等待时间')).toHaveCount(0);
+    await expect(page.getByLabel('字符间隔')).toBeVisible();
+    await page.locator('#input-tab').click();
     await page.locator('#source').fill('中文 Native IPC');
     const state = await page.evaluate(async () => {
       const runtime = window as unknown as { __TAURI_INTERNALS__: { invoke: (command: string, args?: unknown) => Promise<Record<string, unknown>> } };
       return runtime.__TAURI_INTERNALS__.invoke('get_snapshot');
     });
-    expect(state.phase).toBe('idle'); expect(state.shortcutError).toBeNull(); expect(state).not.toHaveProperty('text');
-    await page.locator('#start').click();
-    await expect(page.locator('#start')).toContainText('取消输入');
-    await expect(page.locator('#settings-tab')).toBeDisabled();
-    await expect(page.locator('#about-tab')).toBeDisabled();
-    await expect(pin).toBeDisabled();
-    await page.locator('#start').click();
-    await expect(page.locator('#status-message')).toContainText('已取消');
+    expect(state.phase).toBe('idle'); expect(state.target).toBeNull(); expect(state.shortcutError).toBeNull(); expect(state).not.toHaveProperty('text');
+    await expect(page.locator('#start')).toBeDisabled();
+    const startError = await page.evaluate(async () => {
+      const runtime = window as unknown as { __TAURI_INTERNALS__: { invoke: (command: string, args: unknown) => Promise<unknown> } };
+      try {
+        await runtime.__TAURI_INTERNALS__.invoke('start_task', { draft: { revision: Date.now() + 1000, text: '中文 Native IPC', settings: { intervalMs: 50, shortcut: 'F8' } } });
+        return '';
+      } catch (error) { return String(error); }
+    });
+    expect(startError).toContain('请先点击外部输入位置');
     await expect(page.locator('#source')).toHaveValue('中文 Native IPC');
     await page.locator('#source').fill('  中文  \nA\t');
     await page.getByRole('button', { name: '清理', exact: true }).click();
@@ -87,16 +94,8 @@ test(`packaged WebView2 window, pin and cleanup (${session} session)`, async () 
     ]) {
       await page.keyboard.press(key); await expect(page.locator('#source')).toHaveValue(value);
     }
-    await page.locator('#start').click();
-    await expect(page.locator('#start')).toHaveText('取消输入');
-    await expect(page.locator('#status-message')).toContainText('剩余');
-    await expect(page.locator('#trim-trailing')).toBeDisabled();
-    const cleanedTask = await page.evaluate(() => {
-      const runtime = window as unknown as { __TAURI_INTERNALS__: { invoke: (command: string) => Promise<{ total: number }> } };
-      return runtime.__TAURI_INTERNALS__.invoke('get_snapshot');
-    });
-    expect(cleanedTask.total).toBe(6);
-    await page.locator('#start').click();
+    await expect(page.locator('#start')).toBeDisabled();
+    await expect(page.locator('#trim-trailing')).toBeEnabled();
     await page.mouse.move(0, 0);
     await page.screenshot({ path: `test-results/native-cleanup-${session}.png` });
     await page.locator('#source').evaluate(el => { el.style.height = '320px'; });

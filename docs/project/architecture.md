@@ -14,7 +14,7 @@
 - `src-tauri/src/text.rs`：文本转换与计数。
 - `src-tauri/src/settings.rs`：参数校验和配置保存。
 - `src-tauri/src/shortcut.rs`：全局快捷键注册。
-- `src-tauri/src/windows/`：输入事件与系统监听。
+- `src-tauri/src/windows/`：输入事件、系统监听、物理坐标与目标窗口校验。
 - `src-tauri/src/commands.rs`、`lib.rs`：命令入口、应用装配与退出清理。
 - `tests/e2e/`、`src-tauri/tests/`：界面与原生集成检查。
 - `tests/manual/`：Windows 和 RDP 人工验收步骤。
@@ -48,10 +48,10 @@
 应用的数据处理顺序如下：
 
 1. React 将准备好的文本、设置及按钮操作提交给 Rust；全局快捷键事件在 Rust 侧处理。
-2. Rust 维护任务状态，负责倒计时和输入发送的计时。
+2. Rust 记录空闲时的外部点击，维护任务状态。两种入口共用准备阶段，等待启动操作释放后校验并激活记录窗口，再回点。
 3. 满足启动条件后，Rust 通过 Windows `SendInput` 按顺序提交输入事件。
 4. Rust 接收系统级键鼠事件，依据 INPUT-REQ-004 判断中止。
-5. Rust 通知 React 展示倒计时、输入中、完成、中止及错误状态。
+5. Rust 通知 React 展示目标激活、输入中、完成、中止及错误状态。
 
 输入任务以 Rust 状态为依据。具体接口及状态模型见[领域设计](../domains/text-input/design.md#数据与接口)。
 

@@ -17,7 +17,7 @@ const pinWindow = vi.hoisted(() => ({ isAlwaysOnTop: vi.fn(), setAlwaysOnTop: vi
 const sizingWindow = vi.hoisted(() => ({ setSize: vi.fn(), isMaximized: vi.fn() }));
 vi.mock('@tauri-apps/api/window', () => ({ getCurrentWindow: () => ({ ...pinWindow, ...sizingWindow, show: vi.fn(), onResized: async () => () => {}, minimize: vi.fn(), toggleMaximize: vi.fn(), close: vi.fn(), startDragging: vi.fn() }), LogicalSize: class { constructor(public width: number, public height: number) {} } }));
 
-const initial: Snapshot = { sequence: 1, phase: 'idle', sent: 0, total: 0, remainingSeconds: 0, message: '', settings: defaults, shortcutError: null };
+const initial: Snapshot = { sequence: 1, phase: 'idle', sent: 0, total: 0, target: { x: -900, y: 240, title: '记事本' }, message: '', settings: defaults, shortcutError: null };
 let notify: (state: Snapshot) => void;
 let updateNotify: (state: UpdateSnapshot) => void;
 const updateInitial: UpdateSnapshot = { sequence: 1, phase: 'idle', installed: true, autoCheck: true, version: null, notes: '', downloaded: 0, total: null, message: '' };
@@ -38,7 +38,7 @@ beforeEach(() => {
   vi.mocked(bridge.snapshot).mockResolvedValue(initial);
   vi.mocked(bridge.sync).mockResolvedValue();
   vi.mocked(bridge.subscribe).mockImplementation(async handler => { notify = handler; return () => {}; });
-  vi.mocked(bridge.start).mockResolvedValue({ ...initial, sequence: 2, phase: 'countdown', remainingSeconds: 5 });
+  vi.mocked(bridge.start).mockResolvedValue({ ...initial, sequence: 2, phase: 'targeting', message: '正在返回已记录的输入位置' });
   vi.mocked(bridge.cancel).mockResolvedValue({ ...initial, sequence: 3, phase: 'stopped' });
   vi.mocked(bridge.save).mockImplementation(async settings => ({ ...initial, sequence: 4, settings }));
   globalThis.ResizeObserver = class { observe() {} unobserve() {} disconnect() {} };
@@ -48,6 +48,26 @@ async function mount() {
   await waitFor(() => expect(screen.getByRole('button', { name: '开始输入' })).toBeEnabled());
 }
 describe('editor and native task integration', () => {
+  it('requires an external input position and removes the countdown setting', async () => {
+    vi.mocked(bridge.snapshot).mockResolvedValue({ ...initial, target: null });
+    render(<App />);
+    await waitFor(() => expect(bridge.sync).toHaveBeenCalled());
+    fireEvent.input(screen.getByRole('textbox'), { target: { value: 'ab' } });
+    expect(screen.getByRole('button', { name: '开始输入' })).toBeDisabled();
+    expect(document.getElementById('status-message')).toHaveTextContent('请先点击外部输入位置');
+    fireEvent.click(screen.getByRole('tab', { name: '设置' }));
+    expect(screen.queryByLabelText('等待时间')).not.toBeInTheDocument();
+  });
+  it('keeps the target summary short and exposes its full description for keyboard access', async () => {
+    await mount();
+    const status = document.getElementById('status-message')!;
+    expect(status).toHaveTextContent(/^已记录输入位置$/);
+    expect(status).toHaveAttribute('tabindex', '0');
+    expect(status).toHaveAccessibleDescription('记事本 坐标：(-900, 240)');
+    act(() => notify({ ...initial, sequence: 2, phase: 'targeting' }));
+    expect(status).not.toHaveAttribute('tabindex');
+    expect(document.getElementById('target-details')).not.toBeInTheDocument();
+  });
   it('checks without downloading and requires explicit confirmation before installation', async () => {
     await mount();
     fireEvent.input(screen.getByRole('textbox'), { target: { value: '保留文本' } });
@@ -168,11 +188,11 @@ describe('editor and native task integration', () => {
     fireEvent.keyDown(input, { key: 'ArrowLeft' }); expect(about).toHaveFocus();
     fireEvent.keyDown(about, { key: 'Home' }); expect(input).toHaveFocus();
     fireEvent.keyDown(input, { key: 'End' }); expect(about).toHaveFocus();
-    act(() => notify({ ...initial, sequence: 2, phase: 'arming' }));
+    act(() => notify({ ...initial, sequence: 2, phase: 'targeting' }));
     expect(input).toHaveAttribute('aria-selected', 'true');
     expect(about).toBeDisabled();
-    fireEvent.keyDown(input, { key: 'End' }); expect(settings).toHaveFocus();
-    act(() => notify({ ...initial, sequence: 3, phase: 'countdown' }));
+    fireEvent.keyDown(input, { key: 'End' }); expect(input).toHaveFocus();
+    act(() => notify({ ...initial, sequence: 3, phase: 'targeting' }));
     fireEvent.keyDown(input, { key: 'End' }); expect(input).toHaveFocus();
     expect(about).toBeDisabled();
     act(() => notify({ ...initial, sequence: 4, phase: 'typing' }));
@@ -221,7 +241,7 @@ describe('editor and native task integration', () => {
     await mount(); expect(screen.getByRole('textbox', { name: '待输入文本' })).toBeVisible();
     expect(screen.getByRole('button', { name: '关闭' })).toBeVisible();
     fireEvent.click(screen.getByRole('tab', { name: '设置' }));
-    expect(screen.getByLabelText('等待时间')).toHaveValue(5);
+    expect(screen.queryByLabelText('等待时间')).not.toBeInTheDocument();
     expect(screen.getByLabelText('字符间隔')).toHaveValue(50);
   });
   it('sends the latest source and normalized count with a frozen start draft', async () => {
@@ -230,9 +250,9 @@ describe('editor and native task integration', () => {
     fireEvent.click(screen.getByRole('button', { name: '开始输入' }));
     await waitFor(() => expect(bridge.start).toHaveBeenCalledWith(expect.objectContaining({ text: '中😀\nA', settings: defaults })));
     expect(screen.getByRole('tab', { name: '设置' })).toBeDisabled();
-    expect(document.getElementById('status-message')).toHaveTextContent('等待输入，剩余 5 秒，请选择输入位置。');
-    act(() => notify({ ...initial, sequence: 3, phase: 'countdown', remainingSeconds: 4, message: '等待输入，请在倒计时结束前选择输入位置' }));
-    expect(document.getElementById('status-message')).toHaveTextContent('等待输入，剩余 4 秒，请选择输入位置。');
+    expect(document.getElementById('status-message')).toHaveTextContent('正在返回已记录的输入位置');
+    act(() => notify({ ...initial, sequence: 3, phase: 'targeting', message: '正在返回已记录的输入位置' }));
+    expect(document.getElementById('status-message')).toHaveTextContent('正在返回已记录的输入位置');
     fireEvent.click(screen.getByRole('button', { name: '取消输入' }));
     await waitFor(() => expect(bridge.cancel).toHaveBeenCalled());
   });
@@ -246,7 +266,7 @@ describe('editor and native task integration', () => {
     fireEvent.input(screen.getByRole('textbox'), { target: { value: 'text  ' } });
     expect(cleanup).toBeEnabled(); expect(clear).toBeEnabled();
     let sequence = initial.sequence;
-    for (const phase of ['arming', 'countdown', 'typing'] as const) {
+    for (const phase of ['targeting', 'typing'] as const) {
       act(() => notify({ ...initial, sequence: ++sequence, phase }));
       expect(cleanup).toBeDisabled(); expect(clear).toBeDisabled();
     }
@@ -267,18 +287,18 @@ describe('editor and native task integration', () => {
     expect(screen.getByRole('button', { name: '清理' })).toBeDisabled();
     expect(screen.getByRole('button', { name: '清空' })).toBeDisabled();
     await waitFor(() => expect(bridge.start).toHaveBeenCalled());
-    await act(async () => finishStart({ ...initial, sequence: 2, phase: 'countdown', remainingSeconds: 5 }));
+    await act(async () => finishStart({ ...initial, sequence: 2, phase: 'targeting', message: '正在返回已记录的输入位置' }));
   });
   it('locates invalid settings and allows restoration', async () => {
     await mount(); fireEvent.input(screen.getByRole('textbox'), { target: { value: 'text' } });
     fireEvent.click(screen.getByRole('tab', { name: '设置' }));
-    fireEvent.change(screen.getByLabelText('等待时间'), { target: { value: '0' } });
-    expect(screen.getByText('请输入 1～60 秒的整数。')).toBeVisible();
+    fireEvent.change(screen.getByLabelText('字符间隔'), { target: { value: '0' } });
+    expect(screen.getByText('请输入 10～1,000 毫秒的整数。')).toBeVisible();
     fireEvent.click(screen.getByRole('tab', { name: '输入' }));
     fireEvent.click(screen.getByRole('button', { name: '开始输入' }));
-    expect(screen.getByLabelText('等待时间')).toHaveFocus(); expect(bridge.start).not.toHaveBeenCalled();
+    expect(screen.getByLabelText('字符间隔')).toHaveFocus(); expect(bridge.start).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole('button', { name: '恢复默认' }));
-    await waitFor(() => expect(screen.queryByText('请输入 1～60 秒的整数。')).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.queryByText('请输入 10～1,000 毫秒的整数。')).not.toBeInTheDocument());
   });
   it('ignores stale task events and preserves text on interruption', async () => {
     await mount(); fireEvent.input(screen.getByRole('textbox'), { target: { value: 'keep' } });
@@ -304,11 +324,11 @@ describe('editor and native task integration', () => {
   it('persists valid settings before an immediate start', async () => {
     await mount(); fireEvent.input(screen.getByRole('textbox'), { target: { value: 'text' } });
     fireEvent.click(screen.getByRole('tab', { name: '设置' }));
-    fireEvent.change(screen.getByLabelText('等待时间'), { target: { value: '2' } });
+    fireEvent.change(screen.getByLabelText('字符间隔'), { target: { value: '20' } });
     fireEvent.click(screen.getByRole('tab', { name: '输入' }));
     fireEvent.click(screen.getByRole('button', { name: '开始输入' }));
     await waitFor(() => expect(bridge.start).toHaveBeenCalled());
-    expect(bridge.save).toHaveBeenCalledWith({ ...defaults, delaySeconds: 2 });
+    expect(bridge.save).toHaveBeenCalledWith({ ...defaults, intervalMs: 20 });
     expect(vi.mocked(bridge.save).mock.invocationCallOrder[0]).toBeLessThan(vi.mocked(bridge.start).mock.invocationCallOrder[0]);
   });
   it('toggles native pin state and retains it when setting fails', async () => {
@@ -330,7 +350,7 @@ describe('editor and native task integration', () => {
     const pin = screen.getByRole('button', { name: '置顶窗口' });
     await waitFor(() => expect(pin).toBeEnabled());
     let sequence = initial.sequence;
-    for (const phase of ['arming', 'countdown', 'typing'] as const) {
+    for (const phase of ['targeting', 'typing'] as const) {
       act(() => notify({ ...initial, sequence: ++sequence, phase }));
       expect(pin).toBeDisabled();
     }

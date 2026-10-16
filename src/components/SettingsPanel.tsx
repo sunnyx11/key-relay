@@ -4,7 +4,6 @@ import { defaults, type DraftSettings, type Settings } from '../bridge';
 export function SettingsPanel({ hidden, busy, settings, shortcutError, onChange }: { hidden: boolean; busy: boolean; settings: DraftSettings; shortcutError: string | null; onChange: (value: DraftSettings) => void }) {
   return <section className="panel" id="settings-panel" role="tabpanel" aria-labelledby="settings-tab" hidden={hidden} inert={hidden}>
     <div className="settings-heading"><h2>输入设置</h2><button className="button" disabled={busy} onClick={() => onChange(defaults)}>恢复默认</button></div>
-    <NumberSetting id="delay" label="等待时间" note="按钮启动前等待 1～60 秒" unit="秒" min={1} max={60} value={settings.delaySeconds} disabled={busy} error="请输入 1～60 秒的整数。" onChange={value => onChange({ ...settings, delaySeconds: value })} />
     <div className="setting-row">
       <div className="setting-copy"><label htmlFor="shortcut">快捷键</label><p id="shortcut-note">选定输入位置，松开组合键后开始</p></div>
       <select id="shortcut" value={settings.shortcut} disabled={busy} aria-describedby="shortcut-note shortcut-error" onChange={event => onChange({ ...settings, shortcut: event.target.value as Settings['shortcut'] })}>

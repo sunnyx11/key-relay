@@ -23,6 +23,9 @@ pub fn register(app: &AppHandle, key: &str, signals: Arc<Signals>) -> Result<(),
         .on_shortcut(accelerator.as_str(), move |app, _, event| {
             if event.state == ShortcutState::Pressed {
                 if let Some(runtime) = app.try_state::<Runtime>() {
+                    if matches!(signals.phase.load(Ordering::SeqCst), 2..=3) {
+                        signals.stop.store(true, Ordering::SeqCst);
+                    }
                     let _ = runtime.sender.send(Message::Shortcut {
                         cycle: signals.cycle.load(Ordering::SeqCst),
                         key: function_key,

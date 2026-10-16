@@ -5,6 +5,7 @@ use crate::{
     windows::{
         hooks::{HookEvent, Hooks, Signals},
         input,
+        target::{self, Target},
     },
 };
 use std::{
@@ -55,6 +56,8 @@ impl Runtime {
             let mut hooks = start_hooks(signals.clone(), hook_sender.clone());
             let mut hook_error = hooks.as_ref().err().cloned();
             let mut updating = false;
+            let mut target: Option<Target> = None;
+            let mut target_checked = 0;
             if let Some(error) = &hook_error {
                 engine.snapshot.phase = Phase::Failed;
                 engine.snapshot.message = error.clone();
@@ -68,6 +71,8 @@ impl Runtime {
                 // Idle workers sleep until an operation arrives; active waits remain interruptible.
                 let wait = if engine.busy() {
                     Duration::from_millis(2)
+                } else if target.is_some() {
+                    Duration::from_millis(250)
                 } else {
                     Duration::from_secs(60)
                 };
@@ -87,12 +92,7 @@ impl Runtime {
                             Err(error.clone())
                         } else {
                             signals.stop.store(false, Ordering::SeqCst);
-                            engine.start(
-                                None,
-                                now,
-                                input::own_foreground(),
-                                signals.cycle.load(Ordering::SeqCst),
-                            )
+                            engine.start(None, now, signals.cycle.load(Ordering::SeqCst))
                         };
                         publish_phase(&signals, engine.snapshot.phase);
                         let _ = reply.send(result.map(|_| engine.snapshot.clone()));
@@ -126,9 +126,7 @@ impl Runtime {
                             if !was_busy {
                                 signals.stop.store(false, Ordering::SeqCst);
                             }
-                            if let Err(error) =
-                                engine.start(Some(key), now, input::own_foreground(), cycle)
-                            {
+                            if let Err(error) = engine.start(Some(key), now, cycle) {
                                 engine.snapshot.message = error;
                                 engine.snapshot.sequence += 1;
                             }
@@ -137,7 +135,16 @@ impl Runtime {
                     Ok(Message::Hook(HookEvent::Key { vk, down, cycle })) => {
                         engine.key(vk, down, cycle)
                     }
-                    Ok(Message::Hook(HookEvent::MouseDown)) => engine.mouse_down(),
+                    Ok(Message::Hook(HookEvent::MouseDown { click })) => {
+                        let was_busy = engine.busy();
+                        engine.mouse_down();
+                        if !was_busy && !updating {
+                            if let Some(recorded) = click.and_then(Target::capture) {
+                                engine.record_target(recorded.info.clone());
+                                target = Some(recorded);
+                            }
+                        }
+                    }
                     Ok(Message::Hook(HookEvent::MouseUp)) => {}
                     Ok(Message::PrepareUpdate(reply)) => {
                         if let Err(error) = engine.prepare_update() {
@@ -194,10 +201,33 @@ impl Runtime {
                     Err(mpsc::RecvTimeoutError::Disconnected) => break,
                     Err(mpsc::RecvTimeoutError::Timeout) => {}
                 }
+                if !engine.busy() && !updating && now.saturating_sub(target_checked) >= 250 {
+                    target_checked = now;
+                    if let Some(recorded) = &target {
+                        if let Err(error) = recorded.validate() {
+                            engine.target_failed(error);
+                        }
+                    }
+                }
                 if signals.stop.load(Ordering::SeqCst) && engine.busy() {
                     engine.interrupt(signals.cycle.load(Ordering::SeqCst));
                 }
                 publish_phase(&signals, engine.snapshot.phase);
+                if engine.needs_target_click(now, input::any_held(engine.startup_key))
+                    && !signals.stop.load(Ordering::SeqCst)
+                {
+                    let result = target
+                        .as_ref()
+                        .ok_or_else(|| "请重新选择输入位置。".to_string())
+                        .and_then(|recorded| recorded.click(&signals.stop));
+                    if signals.stop.load(Ordering::SeqCst) {
+                        engine.interrupt(signals.cycle.load(Ordering::SeqCst));
+                    } else if let Err(error) = result {
+                        engine.target_failed(error);
+                    } else {
+                        engine.clicked_target(origin.elapsed().as_millis() as u64);
+                    }
+                }
                 // The hook's atomic latch is checked again immediately before submission.
                 if engine.busy() && !signals.stop.load(Ordering::SeqCst) {
                     let before = engine.snapshot.phase;
@@ -208,8 +238,19 @@ impl Runtime {
                     );
                     publish_phase(&signals, engine.snapshot.phase);
                     if let Some(unit) = unit {
+                        let target_error = if before == Phase::Targeting {
+                            target
+                                .as_ref()
+                                .ok_or_else(|| "请重新选择输入位置。".to_string())
+                                .and_then(Target::ready)
+                                .err()
+                        } else {
+                            None
+                        };
                         if signals.stop.load(Ordering::SeqCst) {
                             engine.interrupt(signals.cycle.load(Ordering::SeqCst));
+                        } else if let Some(error) = target_error {
+                            engine.target_failed(error);
                         } else if before == Phase::Typing || !input::any_held(engine.startup_key) {
                             engine
                                 .submitted(origin.elapsed().as_millis() as u64, input::send(unit));
@@ -225,6 +266,9 @@ impl Runtime {
                 if engine.snapshot.interaction_blocked != blocked {
                     engine.snapshot.interaction_blocked = blocked;
                     engine.snapshot.sequence += 1;
+                }
+                if engine.snapshot.target.is_none() {
+                    target = None;
                 }
                 if published != engine.snapshot.sequence {
                     let _ = app.emit("relay-state", &engine.snapshot);
@@ -253,6 +297,7 @@ impl Runtime {
     }
 }
 fn start_hooks(signals: Arc<Signals>, sender: Sender<Message>) -> Result<Hooks, String> {
+    target::use_physical_coordinates()?;
     Hooks::start(signals, move |event| {
         let _ = sender.send(Message::Hook(event));
     })
@@ -273,8 +318,7 @@ pub async fn resume_update(runtime: &Runtime) -> Result<Snapshot, String> {
 
 fn publish_phase(signals: &Signals, phase: Phase) {
     let phase_code = match phase {
-        Phase::Arming => 1,
-        Phase::Countdown => 2,
+        Phase::Targeting => 2,
         Phase::Typing => 3,
         _ => 0,
     };
@@ -311,7 +355,7 @@ pub async fn sync_draft(runtime: State<'_, Runtime>, draft: Draft) -> Result<(),
         .await
         .map(|_| ())
 }
-/// Freeze the submitted editor state and start the button countdown.
+/// Freeze the submitted editor state and activate the recorded target.
 #[tauri::command]
 pub async fn start_task(runtime: State<'_, Runtime>, draft: Draft) -> Result<Snapshot, String> {
     request(runtime.sender.clone(), |reply| Message::Start(draft, reply)).await
@@ -339,7 +383,7 @@ mod tests {
 
     #[test]
     fn escape_interruption_allows_independent_mouse_operations() {
-        for phase in [Phase::Arming, Phase::Countdown, Phase::Typing] {
+        for phase in [Phase::Targeting, Phase::Typing] {
             let signals = Signals::default();
             let mut engine = Engine::new(Settings::default());
             engine.snapshot.phase = phase;
@@ -389,7 +433,7 @@ mod tests {
 
     #[test]
     fn active_phases_preserve_stop_before_the_worker_cancels() {
-        for phase in [Phase::Arming, Phase::Countdown, Phase::Typing] {
+        for phase in [Phase::Targeting, Phase::Typing] {
             let signals = Signals::default();
             signals.stop.store(true, Ordering::SeqCst);
             publish_phase(&signals, phase);

@@ -20,7 +20,7 @@ pub struct Signals {
 #[derive(Clone, Copy, Debug)]
 pub enum HookEvent {
     Key { vk: u32, down: bool, cycle: u64 },
-    MouseDown,
+    MouseDown { click: Option<super::target::Click> },
     MouseUp,
 }
 
@@ -34,7 +34,7 @@ impl Tracker {
             self.signals
                 .mouse_buttons
                 .fetch_or(button, Ordering::SeqCst);
-            if matches!(self.signals.phase.load(Ordering::SeqCst), 1 | 3) {
+            if matches!(self.signals.phase.load(Ordering::SeqCst), 2..=3) {
                 self.signals.stop.store(true, Ordering::SeqCst);
             }
         } else {
@@ -61,7 +61,7 @@ impl Tracker {
         } else if vk != 27 {
             return None;
         }
-        if down && vk == 27 && matches!(self.signals.phase.load(Ordering::SeqCst), 1..=3) {
+        if down && vk == 27 && matches!(self.signals.phase.load(Ordering::SeqCst), 2..=3) {
             self.signals.stop.store(true, Ordering::SeqCst);
         }
         Some(HookEvent::Key {
@@ -108,6 +108,9 @@ unsafe extern "system" fn keyboard(code: i32, wparam: WPARAM, lparam: LPARAM) ->
 unsafe extern "system" fn mouse(code: i32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
     if code >= 0 {
         let event = &*(lparam.0 as *const MSLLHOOKSTRUCT);
+        if event.flags & LLMHF_INJECTED != 0 && event.dwExtraInfo == super::input::INPUT_MARKER {
+            return CallNextHookEx(None, code, wparam, lparam);
+        }
         let button = match wparam.0 as u32 {
             WM_LBUTTONDOWN | WM_LBUTTONUP => 1,
             WM_RBUTTONDOWN | WM_RBUTTONUP => 2,
@@ -130,7 +133,12 @@ unsafe extern "system" fn mouse(code: i32, wparam: WPARAM, lparam: LPARAM) -> LR
                 if let Some((tracker, sink)) = context.borrow().as_ref() {
                     tracker.mouse(button, down);
                     sink(if down {
-                        HookEvent::MouseDown
+                        HookEvent::MouseDown {
+                            click: (button == 1
+                                && event.flags & LLMHF_INJECTED == 0
+                                && tracker.signals.phase.load(Ordering::SeqCst) == 0)
+                                .then(|| super::target::clicked_window(event.pt.x, event.pt.y)),
+                        }
                     } else {
                         HookEvent::MouseUp
                     });
@@ -154,6 +162,10 @@ impl Hooks {
     ) -> Result<Self, String> {
         let (tx, rx) = mpsc::sync_channel(1);
         let handle = thread::spawn(move || unsafe {
+            if let Err(error) = super::target::use_physical_coordinates() {
+                let _ = tx.send(Err(error));
+                return;
+            }
             let mut msg = MSG::default();
             let _ = PeekMessageW(&mut msg, None, 0, 0, PM_NOREMOVE);
             CONTEXT.with(|context| {
@@ -238,7 +250,7 @@ mod tests {
     }
     #[test]
     fn only_external_escape_interrupts_every_active_phase() {
-        for phase in [1, 2, 3] {
+        for phase in [2, 3] {
             let signals = Arc::new(Signals::default());
             signals.phase.store(phase, Ordering::SeqCst);
             let mut tracker = Tracker {
@@ -334,7 +346,7 @@ mod tests {
         }
     }
     #[test]
-    fn countdown_only_escape_interrupts_and_release_does_not() {
+    fn targeting_only_escape_key_interrupts_and_release_does_not() {
         let signals = Arc::new(Signals::default());
         signals.phase.store(2, Ordering::SeqCst);
         let mut tracker = Tracker {

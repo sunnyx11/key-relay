@@ -19,11 +19,11 @@ export default function App() {
   const [tab, setTab] = useState<'input' | 'settings' | 'about'>('input');
   const sourceRef = useRef<HTMLTextAreaElement>(null);
   const containerRef = useRef<HTMLElement>(null);
-  const active = ['arming', 'countdown', 'typing'].includes(relay.snapshot.phase);
+  const active = ['targeting', 'typing'].includes(relay.snapshot.phase);
   const busy = active || !!relay.snapshot.interactionBlocked || installing;
   const editingDisabled = busy || relay.pending || !relay.ready;
   const report = (error: unknown) => relay.setNotice({ text: String(error), error: true });
-  const tabDisabled = (name: typeof tab) => installing || (name === 'about' ? busy || relay.pending || !relay.ready : name === 'settings' && relay.snapshot.phase === 'countdown');
+  const tabDisabled = (name: typeof tab) => installing || (name === 'about' ? busy || relay.pending || !relay.ready : name === 'settings' && relay.snapshot.phase === 'targeting');
 
   useEffect(() => {
     if (active) setTab(current => current === 'about' ? 'input' : current);
@@ -75,13 +75,13 @@ export default function App() {
   }, []);
 
   const start = () => {
-    if (relay.snapshot.phase === 'countdown') { void relay.cancel(); return; }
+    if (relay.snapshot.phase === 'targeting') { void relay.cancel(); return; }
     if (busy || relay.pending) return;
     if (!relay.text.length) {
       flushSync(() => setTab('input'));
       relay.setNotice({ text: '请先填写文本，在编辑区输入或粘贴需要发送的内容。', error: true }); sourceRef.current?.focus(); return;
     }
-    const invalid = ['delay', 'interval'].find(id => !(document.getElementById(id) as HTMLInputElement).checkValidity());
+    const invalid = ['interval'].find(id => !(document.getElementById(id) as HTMLInputElement).checkValidity());
     if (invalid) { flushSync(() => setTab('settings')); document.getElementById(invalid)?.focus(); return; }
     void relay.start();
   };
@@ -129,7 +129,7 @@ export default function App() {
       <InputPanel hidden={tab !== 'input'} busy={editingDisabled} sourceRef={sourceRef} onInput={relay.updateText} />
       <SettingsPanel hidden={tab !== 'settings'} busy={busy || !relay.ready} settings={relay.settings} shortcutError={relay.snapshot.shortcutError} onChange={relay.updateSettings} />
       <AboutPanel hidden={tab !== 'about'} updates={updates} beforeInstall={relay.flushSettings} />
-      <TaskFooter hidden={tab !== 'input'} text={relay.text} snapshot={relay.snapshot} settings={relay.settings} ready={relay.ready && !relay.snapshot.interactionBlocked && !installing} pending={relay.pending} notice={relay.notice} onStart={start} onTrimTrailing={trimTrailing} onClear={clear} />
+      <TaskFooter hidden={tab !== 'input'} text={relay.text} snapshot={relay.snapshot} ready={relay.ready && !relay.snapshot.interactionBlocked && !installing} pending={relay.pending} notice={relay.notice} onStart={start} onTrimTrailing={trimTrailing} onClear={clear} />
     </div>
   </main>;
 }

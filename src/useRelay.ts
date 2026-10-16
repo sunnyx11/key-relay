@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { bridge, defaults, type Draft, type DraftSettings, type Settings, type Snapshot } from './bridge';
 
-const initial: Snapshot = { sequence: 0, phase: 'idle', sent: 0, total: 0, remainingSeconds: 0, message: '', settings: defaults, shortcutError: null };
+const initial: Snapshot = { sequence: 0, phase: 'idle', sent: 0, total: 0, target: null, message: '', settings: defaults, shortcutError: null };
 
 /** Own editor synchronization and subscription lifetime; Rust owns task execution. */
 export function useRelay() {
@@ -59,7 +59,7 @@ export function useRelay() {
   };
   const updateSettings = (value: DraftSettings) => {
     setSettings(value); setNotice(null); sync(draft.current.text, value);
-    const valid = Number.isInteger(value.delaySeconds) && Number(value.delaySeconds) >= 1 && Number(value.delaySeconds) <= 60 && Number.isInteger(value.intervalMs) && Number(value.intervalMs) >= 10 && Number(value.intervalMs) <= 1000;
+    const valid = Number.isInteger(value.intervalMs) && Number(value.intervalMs) >= 10 && Number(value.intervalMs) <= 1000;
     if (valid) {
       validSettings.current = value as Settings;
       void enqueue(async () => { accept(await bridge.save(value as Settings)); }).catch(() => {});

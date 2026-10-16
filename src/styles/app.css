@@ -16,8 +16,13 @@
 #source { flex-grow: 1; height: 226px; min-height: 226px; }
 #text-count { white-space: nowrap; color: var(--muted); font-size: 12px; margin-right: 2px; }
 .footer { grid-area: 3 / 1; margin: 0 -14px; padding: 6px 14px 8px; display: flex; align-items: center; justify-content: space-between; gap: 16px; }
-#status-message { display: flex; align-items: center; margin: 0; flex: 1; min-width: 0; min-height: 3.4em; color: var(--muted); font-size: 13px; font-weight: 400; line-height: 1.7; overflow-wrap: anywhere; }
-#status-message:is([data-state="countdown"], [data-state="arming"], [data-state="typing"]) { color: var(--accent); }
+.task-status { position: relative; flex: 1; min-width: 0; margin-top: -6px; padding-top: 6px; }
+#status-message { display: flex; align-items: center; margin: 0; min-height: 3.4em; color: var(--muted); font-size: 13px; font-weight: 400; line-height: 1.7; overflow-wrap: anywhere; }
+#status-message[data-summary="true"] { white-space: nowrap; }
+#status-message:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+#target-details { position: absolute; left: 0; bottom: 100%; width: 100%; max-height: 240px; overflow: auto; padding: 6px 8px; border: 1px solid var(--control-line); background: var(--paper); color: var(--text); font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; visibility: hidden; z-index: 1; }
+.footer:not([inert]) .task-status:is(:hover, :focus-within):not([data-dismissed="true"]) #target-details { visibility: visible; }
+#status-message:is([data-state="targeting"], [data-state="typing"]) { color: var(--accent); }
 #status-message[data-state="done"] { color: var(--success); }
 #status-message:is([data-state="error"], [data-state="failed"]) { color: var(--error); }
 .footer-actions { display: flex; flex: 0 0 auto; align-items: center; gap: 8px; }
