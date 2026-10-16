@@ -4,6 +4,25 @@
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-10-16
+
+### Added
+
+- 记录外部点击的窗口与物理坐标，支持多显示器、负坐标及不同缩放比例。
+- 提供简短目标摘要，悬停或聚焦可查看窗口标题与坐标，浮层贴合输入框左下角，Esc 收起。
+
+### Changed
+
+- 按钮与快捷键均先激活并回点已记录位置；使用前需点击目标位置，工具处于前台时也可通过快捷键启动。
+- 目标窗口移动、最小化或显示配置变化时清除记录，提示重新选择输入位置。
+- 启动操作持续按住超过 2 秒时取消准备，同一次快捷键操作保持中止。
+
+### Removed
+
+- 移除启动倒计时及等待时间设置，已有配置中的有效字符间隔与快捷键继续保留。
+
+Windows 150% 系统缩放、混合缩放、其他显示器排列及 RDP 实际兼容性待人工验收。
+
 ## [0.3.0] - 2026-10-10
 
 ### Added
@@ -73,7 +92,8 @@ Windows 150% 系统缩放、跨显示器显示及 RDP 实际兼容性待人工�
 
 Windows 100% 系统缩放下的界面显示与 RDP 实际兼容性待人工验证。
 
-[Unreleased]: https://github.com/sunnyx11/key-relay/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/sunnyx11/key-relay/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/sunnyx11/key-relay/releases/tag/v0.4.0
 [0.3.0]: https://github.com/sunnyx11/key-relay/releases/tag/v0.3.0
 [0.2.4]: https://github.com/sunnyx11/key-relay/releases/tag/v0.2.4
 [0.2.3]: https://github.com/sunnyx11/key-relay/releases/tag/v0.2.3
