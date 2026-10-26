@@ -33,7 +33,8 @@ test('duplicate launch restores the existing window and keeps its session', asyn
       await runtime.__TAURI_INTERNALS__.invoke('plugin:window|set_size', { label: 'main', value: { Logical: { width: 600, height: 450 } } });
     });
     await page.locator('#source').fill('原窗口中的最新编辑');
-    await page.getByRole('button', { name: '置顶窗口' }).click();
+    await expect(page.getByRole('button', { name: '取消置顶' })).toHaveAttribute('aria-pressed', 'true');
+    await page.getByRole('button', { name: '取消置顶' }).click();
     await page.locator('#settings-tab').click();
     await page.getByRole('button', { name: '最小化' }).click();
     const isMinimized = () => page.evaluate(() => (window as unknown as { __TAURI_INTERNALS__: { invoke: (command: string, args: unknown) => Promise<boolean> } }).__TAURI_INTERNALS__.invoke('plugin:window|is_minimized', { label: 'main' }));
@@ -44,7 +45,7 @@ test('duplicate launch restores the existing window and keeps its session', asyn
     expect(await page.evaluate(() => ({ width: innerWidth, height: innerHeight }))).toEqual({ width: 600, height: 450 });
     await expect.poll(() => page.evaluate(() => document.hasFocus())).toBe(true);
     await expect(page.locator('#settings-tab')).toHaveAttribute('aria-selected', 'true');
-    await expect(page.getByRole('button', { name: '取消置顶' })).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.getByRole('button', { name: '置顶窗口' })).toHaveAttribute('aria-pressed', 'false');
     await page.locator('#input-tab').click();
     await expect(page.locator('#source')).toHaveValue('原窗口中的最新编辑');
     await page.getByRole('button', { name: '关闭' }).click();
@@ -56,6 +57,7 @@ test('duplicate launch restores the existing window and keeps its session', asyn
     browser = await chromium.connectOverCDP('http://127.0.0.1:9229');
     const restored = browser.contexts()[0].pages()[0];
     await expect(restored.locator('#source')).toHaveValue('原窗口中的最新编辑');
+    await expect(restored.getByRole('button', { name: '取消置顶' })).toHaveAttribute('aria-pressed', 'true');
     expect(await restored.evaluate(() => ({ width: innerWidth, height: innerHeight }))).toEqual({ width: 600, height: 340 });
     await restored.locator('#history-tab').click();
     await expect(restored.locator('.history-entry')).toHaveCount(1);
@@ -117,8 +119,6 @@ test(`packaged WebView2 window, pin and cleanup (${session} session)`, async () 
     expect(forbidden).toContain('Not allowed to open url https://example.com');
     await page.locator('#input-tab').click();
     const pin = page.getByRole('button', { name: '置顶窗口' });
-    await expect(pin).toHaveAttribute('aria-pressed', 'false');
-    await pin.click();
     await expect(page.getByRole('button', { name: '取消置顶' })).toHaveAttribute('aria-pressed', 'true');
     const isPinned = () => page.evaluate(() => (window as unknown as { __TAURI_INTERNALS__: { invoke: (command: string, args: unknown) => Promise<boolean> } }).__TAURI_INTERNALS__.invoke('plugin:window|is_always_on_top', { label: 'main' }));
     expect(await isPinned()).toBe(true);
