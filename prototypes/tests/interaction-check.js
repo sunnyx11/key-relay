@@ -34,9 +34,15 @@ async page => {
       check(await page.locator('.pin').getAttribute('aria-pressed') === 'true', 'Restore lost pin state');
       const normal = await page.locator('.window').boundingBox();
       await page.getByRole('button', { name: '最大化或还原', exact: true }).click();
-      check((await page.locator('.window').boundingBox()).width > normal.width, 'Maximize preview did not expand');
+      const maximized = await page.locator('.window').boundingBox();
+      check(maximized.width > normal.width && maximized.height > normal.height, 'Maximize preview must expand both dimensions');
+      await page.getByRole('button', { name: '最小化', exact: true }).click();
+      check((await page.locator('.window').boundingBox()).height === 30, 'Minimized maximized preview must retain only its title bar and border');
+      await page.locator('#restore-window').click();
+      check((await page.locator('.window').boundingBox()).height === maximized.height, 'Restoring a minimized maximized preview must retain its height');
       await page.locator('.title-drag').dblclick();
-      check((await page.locator('.window').boundingBox()).width === normal.width, 'Caption double click did not restore');
+      const restored = await page.locator('.window').boundingBox();
+      check(restored.width === normal.width && restored.height === normal.height, 'Caption double click must restore both dimensions');
       await page.getByRole('button', { name: '关闭', exact: true }).click();
       check(!await page.locator('.window').isVisible(), 'Close preview still visible');
       await page.locator('#restore-window').click();
@@ -100,13 +106,15 @@ async page => {
     ['All panels and the license retain height at narrow widths and zoom', async () => {
       check(await page.locator('#about-tab').count() === 1, 'About tab missing');
       for (const width of [1180, 560, 390, 320]) {
-        await page.setViewportSize({ width, height: 1200 });
-        for (const height of [226, 320, 1]) {
+        let previous;
+        for (const height of [450, 500, 720, 960]) {
+          await page.setViewportSize({ width, height });
           await page.locator('#input-tab').click();
-          await page.locator('#source').evaluate((el, value) => { el.style.height = value + 'px'; }, height);
           const editor = await page.locator('#source').boundingBox();
-          check(editor.height >= 226, 'Editor shrank below the minimum height');
-          if (width === 1180) check(editor.height === Math.max(226, height), 'Desktop editor height differs from the requested size');
+          check(editor.height > 0, 'Editor must retain available space');
+          check(await page.locator('#source').evaluate(el => getComputedStyle(el).resize === 'none'), 'Editor resize handle must be disabled');
+          if (previous) check(Math.abs(editor.height - previous.editor - height + previous.viewport) < 1, 'Editor must follow viewport height');
+          previous = { editor: editor.height, viewport: height };
           const input = await page.locator('.window').boundingBox();
           for (const tab of ['settings', 'about']) {
             await page.locator(`#${tab}-tab`).click();
@@ -114,7 +122,7 @@ async page => {
           }
           await page.locator('#show-license').click();
           check((await page.locator('.window').boundingBox()).height === input.height, 'License changed window height');
-          check(await page.locator('#license-view').evaluate(el => el.scrollHeight > el.clientHeight), 'License must scroll internally');
+          if (height === 450) check(await page.locator('#license-view').evaluate(el => el.scrollHeight > el.clientHeight), 'License must scroll internally in short windows');
           await page.locator('#back-about').click();
           check(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'Horizontal overflow');
         }
@@ -378,7 +386,17 @@ async page => {
       }
     }],
     ['Narrow windows give status its own row and preserve toolbar positions', async () => {
-      await page.setViewportSize({ width: 480, height: 900 });
+      for (const windowWidth of [510, 423, 422, 390, 320]) {
+        await page.setViewportSize({ width: windowWidth + 20, height: 500 });
+        await page.locator('.stage').evaluate((el, width) => { el.style.width = `${width}px`; }, windowWidth);
+        const status = await page.locator('#status-message').boundingBox();
+        const actions = await page.locator('.footer-actions').boundingBox();
+        check((await page.locator('.window').boundingBox()).height === 340, 'Prototype must support a 340px window');
+        if (windowWidth > 422) check(Math.abs(status.y + status.height / 2 - actions.y - actions.height / 2) < 1, 'Status must remain beside actions when the window has enough width');
+        else check(actions.y >= status.y + status.height, 'Compact window must place actions below status');
+      }
+      await page.locator('.stage').evaluate(el => { el.style.width = ''; });
+      await page.setViewportSize({ width: 390, height: 900 });
       await page.locator('#source').fill('Text');
       await configure('#delay', '60');
       const before = await page.locator('#status-message').boundingBox();
@@ -481,12 +499,11 @@ async page => {
       });
       check(ratio >= 4.5, 'Placeholder contrast is below 4.5:1: ' + ratio.toFixed(2));
     }],
-    ['Panel height is stable across sizes and editor resize', async () => {
+    ['Panel height is stable across viewport sizes', async () => {
       for (const width of [1180, 390, 320]) {
-        await page.setViewportSize({ width, height: 1000 });
-        for (const sourceHeight of [226, 320]) {
+        for (const height of [450, 720]) {
+          await page.setViewportSize({ width, height });
           await page.locator('#input-tab').click();
-          await page.locator('#source').evaluate((el, height) => { el.style.height = height + 'px'; }, sourceHeight);
           const input = await page.locator('.window').boundingBox();
           await page.locator('#settings-tab').click();
           const settings = await page.locator('.window').boundingBox();

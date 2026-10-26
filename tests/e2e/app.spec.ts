@@ -421,10 +421,34 @@ test('cleanup failure preserves completed edits and synchronizes the actual draf
   await page.keyboard.press('Control+z'); await expect(page.locator('#source')).toHaveValue('a  \nb\t\nc  ');
 });
 
+test('footer keeps status beside actions until the compact breakpoint', async ({ page }) => {
+  await openApp(page, { draft: '字'.repeat(1000) });
+  for (const zoom of [1, 1.5]) {
+    for (const width of [600, 564, 510, 423, 422, 421, 390, 320]) {
+      await page.setViewportSize({ width: Math.round(width * zoom), height: Math.round(340 * zoom) });
+      await page.evaluate(value => { document.body.style.zoom = String(value); }, zoom);
+      // CSS zoom rounds borders to device pixels; measure the actual content box.
+      const contentWidth = await page.locator('.window').evaluate(el => {
+        const style = getComputedStyle(el);
+        return parseFloat(style.width) - parseFloat(style.borderLeftWidth) - parseFloat(style.borderRightWidth);
+      });
+      const status = (await page.locator('#status-message').boundingBox())!;
+      const actions = (await page.locator('.footer-actions').boundingBox())!;
+      if (contentWidth > 420) {
+        expect(Math.abs(status.y + status.height / 2 - actions.y - actions.height / 2)).toBeLessThanOrEqual(zoom);
+        expect(status.x + status.width).toBeLessThan(actions.x);
+      } else expect(actions.y).toBeGreaterThanOrEqual(status.y + status.height);
+      expect(await page.locator('#status-message').evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+      if (zoom === 1 && width === 510) await page.screenshot({ path: 'test-results/footer-510.png' });
+    }
+  }
+});
+
 test('footer actions remain compact and keyboard accessible across widths and zoom', async ({ page }) => {
   await openApp(page); await page.locator('#source').fill('text  ');
   for (const zoom of [1, 1.5]) {
-    for (const width of [600, 563, 562, 390, 320]) {
+    for (const width of [600, 510, 423, 422, 390, 320]) {
       await page.setViewportSize({ width, height: 1100 });
       await page.evaluate(value => { document.body.style.zoom = String(value); }, zoom);
       const boxes = await page.locator('.button-group > button').evaluateAll(els => els.map(el => {
@@ -491,55 +515,87 @@ for (const selector of ['#trim-trailing', '#clear']) {
   });
 }
 
-test('layout matches widths, breakpoints, editor resizing and zoom', async ({ page }) => {
-  await openApp(page);
-  for (const width of [600, 563, 562, 521, 520, 421, 420, 390, 320]) {
-    await page.setViewportSize({ width, height: 1100 });
-    for (const height of [226, 320, 1]) {
-      await page.locator('#source').evaluate((el, value) => { el.style.height = value + 'px'; }, height);
+test('layout fills viewport heights at all widths, breakpoints and zoom', async ({ page }) => {
+  test.setTimeout(90_000);
+  await openApp(page, { draft: '滚动内容\n'.repeat(200), entries: Array.from({ length: 100 }, (_, index) => ({ id: index + 1, time: Date.now(), text: `历史 ${index}\n完整正文` })) });
+  for (const width of [600, 564, 521, 520, 510, 423, 422, 421, 420, 390, 320]) {
+    let previous: { viewport: number; editor: number; footer: number } | undefined;
+    for (const height of [340, 450, 881]) {
+      await page.setViewportSize({ width, height });
+      await page.locator('#input-tab').click();
       const editor = (await page.locator('#source').boundingBox())!;
-      expect(editor.height).toBeGreaterThanOrEqual(226);
-      if (width === 600) expect(editor.height).toBe(Math.max(226, height));
       const footer = (await page.locator('.footer').boundingBox())!;
-      expect(footer.y - editor.y - editor.height).toBeLessThanOrEqual(1);
-      const inputHeight = (await page.locator('.window').boundingBox())!.height;
-      await page.locator('#settings-tab').click();
-      expect((await page.locator('.window').boundingBox())!.height).toBe(inputHeight);
-      const note = (await page.locator('.setting-note').boundingBox())!;
-      expect(note.y + note.height).toBeLessThan(inputHeight);
-      await expect(page.locator('#start')).not.toBeVisible();
-      if (width <= 420) {
-        expect(await page.locator('.setting-row').evaluateAll(rows => rows.every(row => row.children[1].getBoundingClientRect().top >= row.children[0].getBoundingClientRect().bottom))).toBe(true);
+      expect(editor.height).toBeGreaterThan(0);
+      await expect(page.locator('#source')).toHaveCSS('resize', 'none');
+      expect(Math.abs(footer.y - editor.y - editor.height)).toBeLessThanOrEqual(1);
+      expect(Math.abs(footer.y + footer.height - height)).toBeLessThanOrEqual(1);
+      if (previous) {
+        expect(editor.height - previous.editor).toBeCloseTo(height - previous.viewport, 1);
+        expect(footer.height).toBe(previous.footer);
       }
+      previous = { viewport: height, editor: editor.height, footer: footer.height };
+      for (const tab of ['history', 'settings', 'about', 'input']) {
+        await page.locator(`#${tab}-tab`).click();
+        const box = (await page.locator('.window').boundingBox())!;
+        expect(box.width).toBe(width);
+        expect(box.height).toBe(height);
+        expect(await page.evaluate(() => document.documentElement.scrollHeight <= innerHeight)).toBe(true);
+        expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+        if (tab !== 'input') await expect(page.locator('#start')).not.toBeVisible();
+      }
+      await page.locator('#history-tab').click();
+      expect(await page.locator('.history-list').evaluate(el => el.scrollHeight > el.clientHeight)).toBe(true);
+      await page.locator('.history-view').first().click();
+      const fullText = (await page.locator('.history-full-text').boundingBox())!;
+      expect(fullText.height).toBeGreaterThan(0);
+      expect(fullText.y + fullText.height).toBeLessThan(height);
+      await page.getByRole('button', { name: '返回历史' }).click();
+      await page.locator('#settings-tab').click();
+      if (width <= 420) expect(await page.locator('.setting-row').evaluateAll(rows => rows.every(row => row.children[1].getBoundingClientRect().top >= row.children[0].getBoundingClientRect().bottom))).toBe(true);
       await page.locator('#about-tab').click();
-      expect((await page.locator('.window').boundingBox())!.height).toBe(inputHeight);
-      await expect(page.getByText('版本 0.1.0 · Windows 64 位')).toBeVisible();
-      expect(await page.locator('.about-content').evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true);
       await page.getByRole('button', { name: 'MIT 许可证' }).click();
-      expect((await page.locator('.window').boundingBox())!.height).toBe(inputHeight);
+      expect((await page.locator('.window').boundingBox())!.height).toBe(height);
       expect(await page.locator('.about-content').evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true);
       await page.getByRole('button', { name: '返回关于' }).click();
-      await page.locator('#input-tab').click();
-      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     }
   }
-  await page.setViewportSize({ width: 960, height: 1200 });
+  await page.setViewportSize({ width: 960, height: 720 });
   await page.evaluate(() => { document.body.style.zoom = '1.5'; });
-  const before = (await page.locator('.window').boundingBox())!.height;
-  await page.locator('#settings-tab').click(); expect((await page.locator('.window').boundingBox())!.height).toBe(before);
-  await page.screenshot({ path: 'test-results/settings-150.png', fullPage: true });
-  await page.locator('#about-tab').click();
-  expect((await page.locator('.window').boundingBox())!.height).toBe(before);
-  await page.screenshot({ path: 'test-results/about-150.png', fullPage: true });
+  for (const tab of ['input', 'history', 'settings', 'about']) {
+    await page.locator(`#${tab}-tab`).click();
+    expect((await page.locator('.window').boundingBox())!.height).toBe(720);
+    expect(await page.evaluate(() => document.documentElement.scrollHeight <= innerHeight)).toBe(true);
+    await page.screenshot({ path: `test-results/${tab}-viewport-150.png` });
+  }
 });
 
-test('about links, keyboard navigation and offline license retain the editor state', async ({ page }) => {
-  await openApp(page); await page.setViewportSize({ width: 600, height: 600 });
+test('storage and long task errors stay inside the viewport with fixed input controls', async ({ page }) => {
+  await openApp(page);
+  await page.setViewportSize({ width: 320, height: 340 });
+  const footer = (await page.locator('.footer').boundingBox())!;
+  await page.evaluate(() => {
+    window.relayTest.textPush({ error: '内容暂未保存，请重试。' });
+    window.relayTest.push({ phase: 'failed', message: '较长的错误说明，请重新选择输入位置。'.repeat(20) });
+  });
+  await expect(page.locator('.storage-notice')).toBeVisible();
+  const after = (await page.locator('.footer').boundingBox())!;
+  expect(after.height).toBe(footer.height);
+  expect(after.y + after.height).toBeLessThanOrEqual(340);
+  expect((await page.locator('#source').boundingBox())!.height).toBeGreaterThan(0);
+  expect((await page.locator('.window').boundingBox())!.height).toBe(340);
+  expect(await page.locator('#status-message').evaluate(el => el.scrollHeight > el.clientHeight)).toBe(true);
+  await page.getByRole('button', { name: '重试保存' }).click();
+  await expect(page.locator('.storage-notice')).toHaveCount(0);
+});
+
+for (const height of [340, 450]) {
+test(`about links, keyboard navigation and offline license retain the editor state at ${height}px`, async ({ page }) => {
+  await openApp(page); await page.setViewportSize({ width: 600, height });
   await page.locator('#source').fill('保留文本');
   await page.locator('#input-tab').focus(); await page.keyboard.press('End');
   await expect(page.locator('#about-tab')).toBeFocused();
-  await page.locator('.window').screenshot({ path: 'test-results/about-600.png' });
-  expect(await page.locator('.about-content').evaluate(el => el.scrollHeight <= el.clientHeight)).toBe(true);
+  await page.locator('.window').screenshot({ path: `test-results/about-600-${height}.png` });
+  expect(await page.locator('.about-content').evaluate(el => el.scrollHeight > el.clientHeight)).toBe(height === 340);
   const status = (await page.locator('.update-status').boundingBox())!;
   const preference = (await page.locator('.update-preference').boundingBox())!;
   expect(Math.abs(status.y - preference.y)).toBeLessThan(4);
@@ -566,6 +622,7 @@ test('about links, keyboard navigation and offline license retain the editor sta
   await expect(page.locator('#source')).toHaveValue('保留文本');
   await page.keyboard.press('Tab'); await expect(page.locator('#source')).toBeFocused();
 });
+}
 
 test('about update states use the available space at narrow widths and zoom', async ({ page }) => {
   await openApp(page);

@@ -14,8 +14,8 @@ vi.mock('./bridge', async importOriginal => {
   return { ...original, archiveBridge: { read: vi.fn(), change: vi.fn(), flush: vi.fn(), subscribe: vi.fn() }, bridge: { snapshot: vi.fn(), sync: vi.fn(), start: vi.fn(), cancel: vi.fn(), save: vi.fn(), close: vi.fn(), subscribeClose: vi.fn(), subscribe: vi.fn() }, updateBridge: { snapshot: vi.fn(), preference: vi.fn(), check: vi.fn(), download: vi.fn(), install: vi.fn(), subscribe: vi.fn() } };
 });
 const pinWindow = vi.hoisted(() => ({ isAlwaysOnTop: vi.fn(), setAlwaysOnTop: vi.fn() }));
-const sizingWindow = vi.hoisted(() => ({ setSize: vi.fn(), isMaximized: vi.fn() }));
-vi.mock('@tauri-apps/api/window', () => ({ getCurrentWindow: () => ({ ...pinWindow, ...sizingWindow, show: vi.fn(), onResized: async () => () => {}, minimize: vi.fn(), toggleMaximize: vi.fn(), close: vi.fn(), startDragging: vi.fn() }), LogicalSize: class { constructor(public width: number, public height: number) {} } }));
+const sizingWindow = vi.hoisted(() => ({ setSize: vi.fn(), isMaximized: vi.fn(), show: vi.fn() }));
+vi.mock('@tauri-apps/api/window', () => ({ getCurrentWindow: () => ({ ...pinWindow, ...sizingWindow, minimize: vi.fn(), toggleMaximize: vi.fn(), close: vi.fn(), startDragging: vi.fn() }) }));
 
 const initial: Snapshot = { sequence: 1, phase: 'idle', sent: 0, total: 0, target: { x: -900, y: 240, title: '记事本' }, message: '', settings: defaults, shortcutError: null };
 let notify: (state: Snapshot) => void;
@@ -41,6 +41,7 @@ beforeEach(() => {
   vi.mocked(openUrl).mockResolvedValue();
   sizingWindow.setSize.mockResolvedValue(undefined);
   sizingWindow.isMaximized.mockResolvedValue(false);
+  sizingWindow.show.mockResolvedValue(undefined);
   let pinned = false;
   pinWindow.isAlwaysOnTop.mockImplementation(async () => pinned);
   pinWindow.setAlwaysOnTop.mockImplementation(async (value: boolean) => { pinned = value; });
@@ -50,7 +51,6 @@ beforeEach(() => {
   vi.mocked(bridge.start).mockResolvedValue({ ...initial, sequence: 2, phase: 'targeting', message: '正在返回已记录的输入位置' });
   vi.mocked(bridge.cancel).mockResolvedValue({ ...initial, sequence: 3, phase: 'stopped' });
   vi.mocked(bridge.save).mockImplementation(async settings => ({ ...initial, sequence: 4, settings }));
-  globalThis.ResizeObserver = class { observe() {} unobserve() {} disconnect() {} };
 });
 async function mount() {
   render(<App />);
@@ -363,32 +363,13 @@ describe('editor and native task integration', () => {
     expect(about).toBeEnabled();
     expect(input).toHaveAttribute('aria-selected', 'true');
   });
-  it('applies content shrinkage received during a native resize', async () => {
-    const rect = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({ height: 410 } as DOMRect);
-    let resized: ResizeObserverCallback = () => {};
-    globalThis.ResizeObserver = class { constructor(callback: ResizeObserverCallback) { resized = callback; } observe() {} unobserve() {} disconnect() {} };
-    let finishResize!: () => void;
-    sizingWindow.setSize.mockImplementationOnce(() => new Promise<void>(resolve => { finishResize = resolve; }));
-    const { unmount } = render(<App />);
-    try {
-      await waitFor(() => expect(sizingWindow.setSize).toHaveBeenCalledWith(expect.objectContaining({ height: 410 })));
-      rect.mockReturnValue({ height: 353.2 } as DOMRect);
-      act(() => resized([], {} as ResizeObserver));
-      await act(async () => finishResize());
-      await waitFor(() => expect(sizingWindow.setSize).toHaveBeenLastCalledWith(expect.objectContaining({ height: 364 })));
-    } finally { unmount(); rect.mockRestore(); }
-  });
-  it('remeasures viewport changes received while resizing', async () => {
-    const rect = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({ height: 379 } as DOMRect);
-    let finishResize!: () => void;
-    sizingWindow.setSize.mockImplementationOnce(() => new Promise<void>(resolve => { finishResize = resolve; }));
-    const { unmount } = render(<App />);
-    try {
-      await waitFor(() => expect(sizingWindow.setSize).toHaveBeenCalledTimes(1));
-      act(() => window.dispatchEvent(new Event('resize')));
-      await act(async () => finishResize());
-      await waitFor(() => expect(sizingWindow.setSize).toHaveBeenCalledTimes(2));
-    } finally { unmount(); rect.mockRestore(); }
+  it('shows the native window and leaves its size under window control', async () => {
+    await mount();
+    await waitFor(() => expect(sizingWindow.show).toHaveBeenCalledOnce());
+    await act(async () => window.dispatchEvent(new Event('resize')));
+    fireEvent.click(screen.getByRole('tab', { name: '设置' }));
+    expect(sizingWindow.setSize).not.toHaveBeenCalled();
+    expect(sizingWindow.isMaximized).not.toHaveBeenCalled();
   });
   it('shows the editor, title controls and default settings', async () => {
     await mount(); expect(screen.getByRole('textbox', { name: '待输入文本' })).toBeVisible();

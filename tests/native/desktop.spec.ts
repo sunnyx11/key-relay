@@ -7,7 +7,10 @@ import { tmpdir } from 'node:os';
 import config from '../../src-tauri/tauri.conf.json' with { type: 'json' };
 
 let configDir: string;
-test.beforeAll(() => { configDir = mkdtempSync(join(tmpdir(), 'key-relay-desktop-')); });
+test.beforeAll(() => {
+  configDir = mkdtempSync(join(tmpdir(), 'key-relay-desktop-'));
+  if (process.env.KEY_RELAY_TEST_SHORTCUT) writeFileSync(join(configDir, 'settings.json'), JSON.stringify({ intervalMs: 50, shortcut: process.env.KEY_RELAY_TEST_SHORTCUT }));
+});
 test.afterAll(() => { rmSync(configDir, { recursive: true, force: true }); });
 
 test('duplicate launch restores the existing window and keeps its session', async () => {
@@ -24,6 +27,11 @@ test('duplicate launch restores the existing window and keeps its session', asyn
     const page = browser.contexts()[0].pages()[0];
     await expect(page.locator('#source')).toBeEditable();
     await expect(page.locator('#source')).toHaveValue('测试保存草稿');
+    expect(await page.evaluate(() => ({ width: innerWidth, height: innerHeight }))).toEqual({ width: 600, height: 340 });
+    await page.evaluate(async () => {
+      const runtime = window as unknown as { __TAURI_INTERNALS__: { invoke: (command: string, args: unknown) => Promise<void> } };
+      await runtime.__TAURI_INTERNALS__.invoke('plugin:window|set_size', { label: 'main', value: { Logical: { width: 600, height: 450 } } });
+    });
     await page.locator('#source').fill('原窗口中的最新编辑');
     await page.getByRole('button', { name: '置顶窗口' }).click();
     await page.locator('#settings-tab').click();
@@ -33,6 +41,7 @@ test('duplicate launch restores the existing window and keeps its session', asyn
     const second = spawn(executable, [], { env: { ...env, WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: '--remote-debugging-port=9230' }, stdio: 'ignore' }); children.push(second);
     await expect.poll(() => second.exitCode, { timeout: 5_000 }).toBe(0);
     await expect.poll(isMinimized).toBe(false);
+    expect(await page.evaluate(() => ({ width: innerWidth, height: innerHeight }))).toEqual({ width: 600, height: 450 });
     await expect.poll(() => page.evaluate(() => document.hasFocus())).toBe(true);
     await expect(page.locator('#settings-tab')).toHaveAttribute('aria-selected', 'true');
     await expect(page.getByRole('button', { name: '取消置顶' })).toHaveAttribute('aria-pressed', 'true');
@@ -47,6 +56,7 @@ test('duplicate launch restores the existing window and keeps its session', asyn
     browser = await chromium.connectOverCDP('http://127.0.0.1:9229');
     const restored = browser.contexts()[0].pages()[0];
     await expect(restored.locator('#source')).toHaveValue('原窗口中的最新编辑');
+    expect(await restored.evaluate(() => ({ width: innerWidth, height: innerHeight }))).toEqual({ width: 600, height: 340 });
     await restored.locator('#history-tab').click();
     await expect(restored.locator('.history-entry')).toHaveCount(1);
     await restored.getByRole('button', { name: '关闭' }).click();
@@ -75,9 +85,11 @@ test(`packaged WebView2 window, pin and cleanup (${session} session)`, async () 
     await expect(page.locator('#source')).toBeEditable();
     await expect(page.locator('#start')).toBeDisabled();
     await expect(page.locator('#status-message')).toContainText('请先点击外部输入位置');
-    await expect(page.locator('#source')).toHaveCSS('height', '226px');
+    await expect(page.locator('#source')).toHaveCSS('resize', 'none');
+    expect(await page.evaluate(() => ({ width: innerWidth, height: innerHeight }))).toEqual({ width: 600, height: 340 });
     await expect.poll(() => page.evaluate(() => Math.abs(innerHeight - document.querySelector('.window')!.getBoundingClientRect().height))).toBeLessThan(2);
-    await page.screenshot({ path: `test-results/native-input-minimum-${session}.png` });
+    const originalEditorHeight = (await page.locator('#source').boundingBox())!.height;
+    await page.screenshot({ path: `test-results/native-input-default-${session}.png` });
     const originalHeight = await page.evaluate(() => innerHeight);
     await page.locator('#about-tab').click();
     await expect(page.getByText(`版本 ${config.version} · Windows 64 位`)).toBeVisible();
@@ -154,23 +166,65 @@ test(`packaged WebView2 window, pin and cleanup (${session} session)`, async () 
     await expect(page.locator('#trim-trailing')).toBeEnabled();
     await page.mouse.move(0, 0);
     await page.screenshot({ path: `test-results/native-cleanup-${session}.png` });
-    await page.locator('#source').evaluate(el => { el.style.height = '320px'; });
-    await expect.poll(() => page.evaluate(() => innerHeight)).toBeGreaterThan(450);
-    await page.locator('#source').evaluate(el => { el.style.height = '1px'; });
     await page.locator('#clear').click();
     await expect(page.locator('#source')).toHaveValue('');
-    await expect(page.locator('#source')).toHaveCSS('height', '226px');
     await expect(page.locator('#status-message')).toContainText('已清空');
-    await expect.poll(() => page.evaluate(() => Math.abs(innerHeight - document.querySelector('.window')!.getBoundingClientRect().height))).toBeLessThan(2);
-    await expect.poll(() => page.evaluate(() => innerHeight)).toBeLessThan(400);
+    const checkPanels = async () => {
+      for (const tab of ['history', 'settings', 'about', 'input']) {
+        await page.locator(`#${tab}-tab`).click();
+        expect(await page.evaluate(() => {
+          const box = document.querySelector('.window')!.getBoundingClientRect();
+          return Math.abs(box.height - innerHeight) <= 1 && Math.abs(box.width - innerWidth) <= 1
+            && document.documentElement.scrollHeight <= innerHeight && document.documentElement.scrollWidth <= innerWidth;
+        })).toBe(true);
+        if (tab !== 'input') {
+          const content = (await page.locator(`.${tab}-content`).boundingBox())!;
+          expect(Math.abs(content.y + content.height - await page.evaluate(() => innerHeight))).toBeLessThanOrEqual(8);
+        }
+      }
+      const editor = (await page.locator('#source').boundingBox())!;
+      const footer = (await page.locator('.footer').boundingBox())!;
+      expect(editor.height).toBeGreaterThan(0);
+      expect(Math.abs(footer.y - editor.y - editor.height)).toBeLessThanOrEqual(1);
+      expect(Math.abs(footer.y + footer.height - await page.evaluate(() => innerHeight))).toBeLessThanOrEqual(1);
+    };
+    const minimum = JSON.parse(execFileSync('powershell.exe', ['-NoProfile', '-Command', `
+      Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; public class RelayMinimumSize {
+        [StructLayout(LayoutKind.Sequential)] public struct Point { public int X, Y; }
+        [StructLayout(LayoutKind.Sequential)] public struct MinMaxInfo { public Point Reserved, MaxSize, MaxPosition, MinTrackSize, MaxTrackSize; }
+        [DllImport("user32.dll")] static extern IntPtr SendMessage(IntPtr window, uint message, IntPtr parameter, ref MinMaxInfo info);
+        public static int[] Read(IntPtr window) { var info = new MinMaxInfo(); SendMessage(window, 0x24, IntPtr.Zero, ref info); return new int[] { info.MinTrackSize.X, info.MinTrackSize.Y }; }
+      }';
+      $taskMinimum = [RelayMinimumSize]::Read((Get-Process -Id ${child.pid}).MainWindowHandle);
+      ConvertTo-Json -Compress -InputObject @($taskMinimum)
+    `], { encoding: 'utf8' }));
+    expect(minimum).toEqual([320, 340]);
+    for (const [width, height] of [[600, 600], [510, 340], [390, 450], [320, 340], [600, 340]]) {
+      await page.evaluate(async ({ width, height }) => {
+        const runtime = window as unknown as { __TAURI_INTERNALS__: { invoke: (command: string, args: unknown) => Promise<void> } };
+        await runtime.__TAURI_INTERNALS__.invoke('plugin:window|set_size', { label: 'main', value: { Logical: { width, height } } });
+      }, { width, height });
+      await expect.poll(() => page.evaluate(() => ({ width: innerWidth, height: innerHeight }))).toEqual({ width, height });
+      await checkPanels();
+      if (width === 510) {
+        const status = (await page.locator('#status-message').boundingBox())!;
+        const actions = (await page.locator('.footer-actions').boundingBox())!;
+        expect(Math.abs(status.y + status.height / 2 - actions.y - actions.height / 2)).toBeLessThanOrEqual(1);
+        await page.screenshot({ path: `test-results/native-footer-510-${session}.png` });
+      }
+      if (width === 320) await page.screenshot({ path: `test-results/native-minimum-${session}.png` });
+      if (width === 600) expect((await page.locator('#source').boundingBox())!.height - originalEditorHeight).toBeCloseTo(height - originalHeight, 1);
+    }
     await page.getByRole('button', { name: '最大化或还原' }).click();
     await expect.poll(() => page.evaluate(async () => {
       const runtime = window as unknown as { __TAURI_INTERNALS__: { invoke: (command: string, args?: unknown) => Promise<boolean> } };
       return runtime.__TAURI_INTERNALS__.invoke('plugin:window|is_maximized', { label: 'main' });
     })).toBe(true);
+    await checkPanels();
+    await page.screenshot({ path: `test-results/native-maximized-${session}.png` });
     await page.getByRole('button', { name: '最大化或还原' }).click();
-    await expect.poll(() => page.evaluate(() => innerWidth)).toBe(600);
-    await expect.poll(() => page.evaluate(() => Math.abs(innerHeight - document.querySelector('.window')!.getBoundingClientRect().height))).toBeLessThan(2);
+    await expect.poll(() => page.evaluate(() => ({ width: innerWidth, height: innerHeight }))).toEqual({ width: 600, height: 340 });
+    await checkPanels();
     await pin.click();
     await expect(page.getByRole('button', { name: '取消置顶' })).toHaveAttribute('aria-pressed', 'true');
     console.log('Native viewport', await page.evaluate(() => ({ width: innerWidth, height: innerHeight, scale: devicePixelRatio })));

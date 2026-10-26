@@ -49,10 +49,12 @@
     [hidden] { display: none !important; }
     .stage { width: min(600px, calc(100% - 32px)); margin: 28px auto 24px; }
     .stage.maximized { width: calc(100% - 20px); }
+    .stage.maximized .window { height: calc(100dvh - 110px); }
+    .stage .window.minimized { height: auto; }
     .window.minimized > :not(.titlebar) { display: none !important; }
     .review-label { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 0 0 8px; color: var(--muted); font-size: 12px; }
-    .window { container-type: inline-size; border: 1px solid var(--line); background: var(--surface); box-shadow: 0 3px 14px #00000008; }
-    .titlebar { height: 28px; display: flex; align-items: center; background: var(--surface); border-bottom: 1px solid var(--line); user-select: none; }
+    .window { container-type: inline-size; height: calc(100dvh - 160px); display: flex; flex-direction: column; border: 1px solid var(--line); background: var(--surface); box-shadow: 0 3px 14px #00000008; }
+    .titlebar { height: 28px; flex-shrink: 0; display: flex; align-items: center; background: var(--surface); border-bottom: 1px solid var(--line); user-select: none; }
     .title-drag { display: flex; align-items: center; padding: 0 14px; flex: 1; min-width: 0; height: 100%; }
     .app-name { font-size: 12px; font-weight: 400; line-height: 20px; color: var(--title-text); white-space: nowrap; }
     .window-actions { display: flex; flex-shrink: 0; }
@@ -64,26 +66,26 @@
     .caption-button.pin[aria-pressed="true"] { background: var(--accent-surface); color: var(--accent); }
     .caption-button.pin:disabled { color: #858585; }
     .caption-button.close:hover:enabled { background: var(--error); color: var(--paper); }
-    .workspace { display: grid; grid-template-columns: minmax(0, 1fr); padding: 8px 14px 0; }
+    .workspace { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr) auto; padding: 8px 14px 0; }
     .tabs { display: flex; align-items: end; height: 29px; border-bottom: 1px solid var(--line); }
     .tab { height: 28px; min-width: 64px; padding: 3px 15px; border: 1px solid transparent; border-bottom: 0; background: transparent; position: relative; color: var(--muted); }
     .tab[aria-selected="true"] { background: var(--surface); border-color: var(--line); color: var(--text); top: 1px; height: 29px; }
     .tab:hover:enabled:not([aria-selected="true"]) { background: #e9e9e9; }
-    .panel { display: flex; flex-direction: column; grid-area: 2 / 1; min-height: 238px; padding: 12px 0 0; }
+    .panel { display: flex; flex-direction: column; grid-area: 2 / 1; min-height: 0; padding: 12px 0 0; }
     .panel[hidden] { display: flex !important; visibility: hidden; }
     .panel > * { flex-shrink: 0; }
-    #settings-panel { grid-row: 2 / 4; }
+    #settings-panel { grid-row: 2 / 4; overflow: auto; }
     .footer-actions { display: flex; flex: 0 0 auto; align-items: center; gap: 8px; }
-    textarea { display: block; width: 100%; border: 1px solid var(--control-line); border-radius: 0; background: var(--paper); padding: 9px 10px; line-height: 1.8; resize: vertical; }
+    textarea { display: block; width: 100%; border: 1px solid var(--control-line); border-radius: 0; background: var(--paper); padding: 9px 10px; line-height: 1.8; resize: none; }
     #source:focus-visible, #shortcut:focus-visible { outline-offset: -2px; }
     textarea::placeholder { color: var(--placeholder); }
-    #source { flex-grow: 1; height: 226px; min-height: 226px; }
+    #source { flex: 1; min-height: 0; }
     textarea[readonly] { background: #fafafa; }
     #text-count { white-space: nowrap; color: var(--muted); font-size: 12px; margin-right: 2px; }
     .button-group { display: flex; align-items: center; flex-wrap: wrap; justify-content: flex-end; gap: 4px; }
     input[type="number"] { height: 30px; width: 66px; padding: 2px 7px; border: 1px solid var(--control-line); background: var(--paper); }
     .footer { grid-area: 3 / 1; margin: 0 -14px; padding: 6px 14px 8px; display: flex; align-items: center; justify-content: space-between; gap: 16px; }
-    #status-message { display: flex; align-items: center; margin: 0; flex: 1; min-width: 0; min-height: 3.4em; color: var(--muted); font-size: 13px; font-weight: 400; line-height: 1.7; overflow-wrap: anywhere; }
+    #status-message { display: flex; align-items: safe center; margin: 0; flex: 1; min-width: 0; height: 3.4em; overflow: auto; color: var(--muted); font-size: 13px; font-weight: 400; line-height: 1.7; overflow-wrap: anywhere; }
     #status-message:is([data-state="countdown"], [data-state="arming"], [data-state="typing"]) { color: var(--accent); }
     #status-message[data-state="done"] { color: var(--success); }
     #status-message[data-state="error"] { color: var(--error); }
@@ -150,10 +152,11 @@
     .preview { margin-top: 14px; color: var(--muted); font-size: 12px; }
     .preview > summary { cursor: pointer; padding: 0 0 10px; user-select: none; }
     .preview-heading { display: flex; align-items: center; justify-content: space-between; margin: 0 0 8px; }
-    #target { height: 104px; min-height: 80px; font-size: 13px; border-color: #bcbcbc; background: #f9f9f9; }
+    #target { height: 104px; min-height: 80px; resize: vertical; font-size: 13px; border-color: #bcbcbc; background: #f9f9f9; }
     .preview-note { margin: 8px 0 0; line-height: 1.8; font-size: 11px; }
-    @container (max-width: 560px) {
+    @container (max-width: 420px) {
       .footer { align-items: stretch; flex-direction: column; gap: 8px; }
+      #status-message { flex: none; }
       .footer-actions { align-self: flex-end; flex-wrap: wrap; justify-content: flex-end; }
     }
     @media (max-width: 520px) {
@@ -280,7 +283,7 @@ SOFTWARE.
       <div class="preview-heading"><label for="target">测试输入框</label><button class="button" id="clear-target">清空结果</button></div>
       <textarea id="target" placeholder="点击开始后，在倒计时结束前点击这里。" spellcheck="false"></textarea>
       <label for="update-demo">更新演示</label><select id="update-demo"><option value="installed">安装版：发现新版本</option><option value="portable">独立 EXE：手动替换</option><option value="current">已是最新版本</option><option value="error">检查失败</option><option value="signature">签名验证失败</option><option value="install-error">安装启动失败</option></select>
-      <p class="preview-note">此区域用于演示交互，桌面软件界面为上方窗口。原型只向本页测试框写入文本，快捷键在本页生效；Enter、Tab 显示为文本。图钉仅演示选中状态，窗口按钮仅改变页面内展示；标题双击切换展示宽度，系统窗口拖动在桌面版本中验证。最小化或关闭后可通过上方按钮恢复演示。版本为静态示例，链接由浏览器及默认邮件应用处理。更新演示使用固定数据；确认安装模拟重启并清除编辑文本。</p></p>
+      <p class="preview-note">此区域用于演示交互，桌面软件界面为上方窗口。原型只向本页测试框写入文本，快捷键在本页生效；Enter、Tab 显示为文本。图钉仅演示选中状态，窗口按钮仅改变页面内展示；标题双击切换展示宽高，系统窗口拖动在桌面版本中验证。最小化或关闭后可通过上方按钮恢复演示。版本为静态示例，链接由浏览器及默认邮件应用处理。更新演示使用固定数据；确认安装模拟重启并清除编辑文本。</p></p>
     </details>
   </main>
   <script>

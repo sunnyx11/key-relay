@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { flushSync } from 'react-dom';
-import { getCurrentWindow, LogicalSize } from '@tauri-apps/api/window';
+import { getCurrentWindow } from '@tauri-apps/api/window';
 import { useRelay } from './useRelay';
 import { useUpdates } from './useUpdates';
 import { TitleBar } from './components/TitleBar';
@@ -23,7 +23,6 @@ export default function App() {
   const [tab, setTab] = useState<'input' | 'history' | 'settings' | 'about'>('input');
   const [restoredSequence, setRestoredSequence] = useState<number | null>(null);
   const sourceRef = useRef<HTMLTextAreaElement>(null);
-  const containerRef = useRef<HTMLElement>(null);
   const active = ['targeting', 'typing'].includes(relay.snapshot.phase);
   const busy = active || !!relay.snapshot.interactionBlocked || installing;
   const editingDisabled = busy || relay.pending || !relay.ready;
@@ -61,33 +60,8 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    const container = containerRef.current;
-    if (!container) return;
-    let disposed = false;
-    let resizing = false;
-    let resizePending = false;
-    const appWindow = getCurrentWindow();
-    const resize = async () => {
-      if (disposed) return;
-      resizePending = true;
-      if (resizing) return;
-      resizing = true;
-      try {
-        do {
-          resizePending = false;
-          if (await appWindow.isMaximized() || disposed) return;
-          const height = Math.max(364, Math.ceil(container.getBoundingClientRect().height));
-          if (Math.abs(window.innerHeight - height) > 1) await appWindow.setSize(new LogicalSize(window.innerWidth, height));
-        } while (resizePending && !disposed);
-      } finally { resizing = false; }
-    };
-    const update = () => { void resize().catch(() => {}); };
-    const observer = new ResizeObserver(update);
-    observer.observe(container);
-    window.addEventListener('resize', update);
-    void resize().finally(() => appWindow.show()).catch(() => {});
-    return () => { disposed = true; observer.disconnect(); window.removeEventListener('resize', update); };
-  }, []);
+    void getCurrentWindow().show().catch(error => setNotice({ text: String(error), error: true }));
+  }, [setNotice]);
 
   const start = () => {
     if (relay.snapshot.phase === 'targeting') { void relay.cancel(); return; }
@@ -153,7 +127,7 @@ export default function App() {
     const next = available[event.key === 'Home' ? 0 : event.key === 'End' ? available.length - 1 : (index + (event.key === 'ArrowRight' ? 1 : -1) + available.length) % available.length].name;
     setTab(next); document.getElementById(`${next}-tab`)?.focus();
   };
-  return <main className="window" ref={containerRef}>
+  return <main className="window">
     <TitleBar disabled={busy || relay.pending || !relay.ready} onError={report} />
     {relay.closeError && <div className="storage-notice" role="alert">{relay.closeError} 请再次关闭窗口以重试。</div>}
     {(!relay.ready || relay.archive.error) && <div className="storage-notice" role={relay.loadError || relay.archive.error ? 'alert' : 'status'}>

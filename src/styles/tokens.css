@@ -13,5 +13,6 @@
   --button-radius: 0; --control-height: 30px; --control-width: 156px;
 }
 * { box-sizing: border-box; }
+html, body, #root { height: 100%; }
 body { margin: 0; background: var(--surface); color: var(--text); font: 14px/1.5 var(--font); }
 [hidden] { display: none !important; }
