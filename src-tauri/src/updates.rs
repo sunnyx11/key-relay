@@ -301,6 +301,7 @@ pub async fn install_update(
                 recovery.map_or(error.clone(), |value| format!("{error} {value}"));
         }));
     }
+    crate::window_state::save(&app);
     let result = tauri::async_runtime::spawn_blocking(move || {
         let error = candidate
             .install(&bytes)

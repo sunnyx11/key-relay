@@ -12,6 +12,7 @@ test.beforeAll(() => {
   if (process.env.KEY_RELAY_TEST_SHORTCUT) writeFileSync(join(configDir, 'settings.json'), JSON.stringify({ intervalMs: 50, shortcut: process.env.KEY_RELAY_TEST_SHORTCUT }));
 });
 test.afterAll(() => { rmSync(configDir, { recursive: true, force: true }); });
+test.beforeEach(() => { rmSync(join(configDir, 'window-state.json'), { force: true }); });
 
 test('duplicate launch restores the existing window and keeps its session', async () => {
   const executable = resolve(process.env.KEY_RELAY_TEST_EXECUTABLE || 'src-tauri/target/release/key-relay.exe');
@@ -58,7 +59,7 @@ test('duplicate launch restores the existing window and keeps its session', asyn
     const restored = browser.contexts()[0].pages()[0];
     await expect(restored.locator('#source')).toHaveValue('原窗口中的最新编辑');
     await expect(restored.getByRole('button', { name: '取消置顶' })).toHaveAttribute('aria-pressed', 'true');
-    expect(await restored.evaluate(() => ({ width: innerWidth, height: innerHeight }))).toEqual({ width: 600, height: 340 });
+    expect(await restored.evaluate(() => ({ width: innerWidth, height: innerHeight }))).toEqual({ width: 600, height: 450 });
     await restored.locator('#history-tab').click();
     await expect(restored.locator('.history-entry')).toHaveCount(1);
     await restored.getByRole('button', { name: '关闭' }).click();

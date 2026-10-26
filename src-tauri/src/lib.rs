@@ -6,6 +6,7 @@ mod shortcut;
 pub mod task;
 pub mod text;
 mod updates;
+mod window_state;
 pub mod windows;
 
 use tauri::{Emitter, Manager};
@@ -40,6 +41,13 @@ pub fn run() {
                 app.path().home_dir(),
                 std::env::var_os("KEY_RELAY_TEST_CONFIG_DIR"),
             )?;
+            let mut geometry = window_state::Store::new(directory.join("window-state.json"));
+            if let Some(window) = app.get_webview_window("main") {
+                if let Err(error) = geometry.restore(&window) {
+                    eprintln!("恢复窗口状态失败：{error}");
+                }
+            }
+            app.manage(geometry);
             let path = directory.join("settings.json");
             let archive =
                 archive::Archive::spawn(app.handle().clone(), path.with_file_name("text.json"));

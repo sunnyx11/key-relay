@@ -319,6 +319,7 @@ impl Runtime {
         let sender = self.sender.clone();
         thread::spawn(move || {
             if shutdown_worker(sender).is_ok() {
+                crate::window_state::save(&app);
                 app.exit(0);
             } else {
                 use tauri::Manager;
@@ -409,6 +410,7 @@ pub async fn close_app(app: AppHandle, runtime: State<'_, Runtime>) -> Result<()
         .map_err(|_| "退出请求执行失败。".to_string())
         .and_then(|result| result);
     if result.is_ok() {
+        crate::window_state::save(&app);
         app.exit(0);
     } else {
         runtime.closing.store(false, Ordering::SeqCst);
