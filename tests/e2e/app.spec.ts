@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
-import type { Snapshot, Draft, UpdateSnapshot, TextState, TextAction, HistoryEntry } from '../../src/bridge';
+import type { Snapshot, Draft, UpdateSnapshot, TextState, TextAction } from '../../src/bridge';
 
 declare global {
   interface Window { relayTest: { state: Snapshot; push: (state: Partial<Snapshot>) => void; calls: string[]; openedUrls: string[]; draft?: Draft; update: UpdateSnapshot; updatePush: (state: Partial<UpdateSnapshot>) => void; text: TextState; textPush: (state: Partial<TextState>) => void } }
@@ -13,8 +13,7 @@ async function openApp(page: Page, saved?: Partial<TextState>) {
     let pinned = false;
     const state: Snapshot = { sequence: 1, phase: 'idle', sent: 0, total: 0, target: { x: -900, y: 240, title: '记事本' }, message: '', settings: { intervalMs: 50, shortcut: 'F8' }, shortcutError: null };
     const update: UpdateSnapshot = { sequence: 1, phase: 'idle', installed: true, autoCheck: true, version: null, notes: '', downloaded: 0, total: null, message: '' };
-    const text: TextState = { sequence: 1, draft: '', entries: [], restoreDraft: true, saveHistory: true, canUndo: false, error: null, ...JSON.parse(localStorage.getItem('relay-text-test') || JSON.stringify(initialText || {})) };
-    let deleted: { entry: HistoryEntry; index: number } | null = null;
+    const text: TextState = { sequence: 1, draft: '', entries: [], restoreDraft: true, saveHistory: true, error: null, ...JSON.parse(localStorage.getItem('relay-text-test') || JSON.stringify(initialText || {})) };
     window.relayTest = { state, update, text, textPush: patch => {
       Object.assign(text, patch, { sequence: text.sequence + 1 });
       localStorage.setItem('relay-text-test', JSON.stringify(text));
@@ -37,12 +36,12 @@ async function openApp(page: Page, saved?: Partial<TextState>) {
           if (command === 'change_text_state') {
             const action = args.action as TextAction;
             if (action.kind === 'preferences') Object.assign(text, { restoreDraft: action.restoreDraft, saveHistory: action.saveHistory });
-            if (action.kind === 'delete') {
-              const index = text.entries.findIndex(entry => entry.id === action.id);
-              if (index >= 0) { deleted = { index, entry: text.entries.splice(index, 1)[0] }; text.canUndo = true; }
+            if (action.kind === 'delete') text.entries = text.entries.filter(entry => entry.id !== action.id);
+            if (action.kind === 'pin') {
+              const entry = text.entries.find(entry => entry.id === action.id);
+              if (entry) entry.pinned = action.pinned;
             }
-            if (action.kind === 'undo' && deleted) { text.entries.splice(deleted.index, 0, deleted.entry); deleted = null; text.canUndo = false; }
-            if (action.kind === 'clear') { text.entries = []; text.canUndo = false; deleted = null; }
+            if (action.kind === 'clear') text.entries = text.entries.filter(entry => entry.pinned && !action.includePinned);
             if (action.kind === 'clearDraft') text.draft = '';
             window.relayTest.textPush({ error: null });
             return structuredClone(text);
@@ -102,7 +101,7 @@ test('saved draft survives reload, clear stays empty and disabled saving preserv
 
 test('history viewing preserves edits, search and list scroll before an explicit restoration', async ({ page }) => {
   const original = '首行\n  缩进😀\n\t末行\n' + '完整正文\n'.repeat(80);
-  await openApp(page, { draft: '当前编辑', entries: Array.from({ length: 30 }, (_, index) => ({ id: 30 - index, time: Date.now(), text: index === 20 ? original : `正文 ${index}` })) });
+  await openApp(page, { draft: '当前编辑', entries: Array.from({ length: 30 }, (_, index) => ({ pinned: false, id: 30 - index, time: Date.now(), text: index === 20 ? original : `正文 ${index}` })) });
   await page.locator('#history-tab').click();
   const preview = page.getByRole('button', { name: /^查看记录：首行/ });
   await preview.scrollIntoViewIfNeeded();
@@ -128,7 +127,7 @@ test('history viewing preserves edits, search and list scroll before an explicit
 
 test('history restores the entire original as one native undo step and then returns to target status', async ({ page }) => {
   const original = '第一行\n  中😀e\u0301\n末行';
-  await openApp(page, { entries: [{ id: 1, text: original, time: Date.now() }] });
+  await openApp(page, { entries: [{ pinned: false, id: 1, text: original, time: Date.now() }] });
   const source = page.locator('#source');
   await source.fill('当前编辑');
   await page.evaluate(() => window.relayTest.push({ phase: 'done', message: '已完成', sent: 1, total: 1 }));
@@ -147,12 +146,12 @@ test('history restores the entire original as one native undo step and then retu
   expect(await page.evaluate(() => window.relayTest.text.entries.length)).toBe(1);
 });
 
-test('history searches complete originals and keeps deletion, undo and clear separate from restoration', async ({ page }) => {
+test('history searches complete originals and keeps immediate deletion and clear separate from restoration', async ({ page }) => {
   const today = Date.now();
   const yesterday = new Date(); yesterday.setDate(yesterday.getDate() - 1);
   await openApp(page, { draft: '当前草稿', entries: [
-    { id: 2, time: today, text: '第一行\n  第二行\n隐藏在预览之后的匹配内容😀' },
-    { id: 1, time: yesterday.getTime(), text: '昨天的内容' },
+    { pinned: false, id: 2, time: today, text: '第一行\n  第二行\n隐藏在预览之后的匹配内容😀' },
+    { pinned: false, id: 1, time: yesterday.getTime(), text: '昨天的内容' },
   ] });
   await page.locator('#history-tab').click();
   await expect(page.getByRole('heading', { name: '今天' })).toBeVisible();
@@ -163,22 +162,76 @@ test('history searches complete originals and keeps deletion, undo and clear sep
   await page.locator('.history-entry').first().getByRole('button', { name: /^删除记录/ }).click();
   await expect(page.locator('.history-entry')).toHaveCount(1);
   await expect(page.locator('#history-tab')).toHaveAttribute('aria-selected', 'true');
-  await page.getByRole('button', { name: '撤销删除' }).click();
-  await expect(page.locator('.history-entry')).toHaveCount(2);
+  await expect(page.getByRole('button', { name: '撤销删除' })).toHaveCount(0);
   await page.getByRole('button', { name: '清空历史', exact: true }).click();
   await expect(page.getByRole('button', { name: '取消', exact: true })).toBeFocused();
   await page.getByRole('button', { name: '取消', exact: true }).click();
-  await expect(page.locator('.history-entry')).toHaveCount(2);
+  await expect(page.locator('.history-entry')).toHaveCount(1);
   await page.getByRole('button', { name: '清空历史', exact: true }).click();
-  await page.getByRole('button', { name: '确认清空历史' }).click();
+  await page.getByRole('button', { name: '确认' }).click();
   await expect(page.locator('.history-entry')).toHaveCount(0);
   expect(await page.evaluate(() => window.relayTest.text.draft)).toBe('当前草稿');
   await page.locator('#input-tab').click();
   await expect(page.locator('#source')).toHaveValue('当前草稿');
 });
 
+test('pin order persists across reload and clear counts include records outside search', async ({ page }) => {
+  await openApp(page, { draft: '保留草稿', entries: [
+    { id: 3, time: 300, text: '最新普通', pinned: false },
+    { id: 2, time: 200, text: '较旧普通', pinned: false },
+    { id: 1, time: 100, text: '较早置顶\n完整内容', pinned: true },
+  ] });
+  await page.locator('#history-tab').click();
+  const ids = () => page.locator('.history-entry').evaluateAll(entries => entries.map(entry => entry.getAttribute('data-entry-id')));
+  expect(await ids()).toEqual(['1', '3', '2']);
+  await page.getByRole('button', { name: '置顶记录：较旧普通', exact: true }).click();
+  expect(await ids()).toEqual(['2', '1', '3']);
+  await page.reload();
+  await page.locator('#history-tab').click();
+  expect(await ids()).toEqual(['2', '1', '3']);
+  await page.getByRole('button', { name: /^取消置顶记录：较早/ }).click();
+  expect(await ids()).toEqual(['2', '3', '1']);
+  expect(await page.evaluate(() => window.relayTest.text.entries.map(({ id, time }) => [id, time]))).toEqual([[3, 300], [2, 200], [1, 100]]);
+  await page.getByRole('searchbox').fill('最新');
+  await page.getByRole('button', { name: '清空历史', exact: true }).click();
+  await expect(page.getByRole('group', { name: '清空历史确认' })).toContainText('删除 2 条记录，保留 1 条置顶记录');
+  await expect(page.getByRole('checkbox', { name: '同时删除置顶记录' })).not.toBeChecked();
+  for (const [width, zoom] of [[600, 1], [320, 1.5]]) {
+    await page.setViewportSize({ width, height: 600 });
+    await page.evaluate(value => { document.body.style.zoom = String(value); }, zoom);
+    await page.locator('.window').screenshot({ path: `test-results/history-confirmation-${width}-${zoom}.png` });
+  }
+  await page.getByRole('button', { name: '确认' }).click();
+  await page.getByRole('searchbox').fill('');
+  expect(await ids()).toEqual(['2']);
+  await page.getByRole('button', { name: '清空历史', exact: true }).click();
+  await page.getByRole('checkbox', { name: '同时删除置顶记录' }).check();
+  await page.getByRole('button', { name: '确认' }).click();
+  await expect(page.locator('.history-entry')).toHaveCount(0);
+  await page.locator('#input-tab').click();
+  await expect(page.locator('#source')).toHaveValue('保留草稿');
+});
+
+test('a full pinned archive keeps capacity guidance visible during a task at minimum width', async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 340 });
+  await openApp(page, { entries: Array.from({ length: 100 }, (_, index) => ({ id: index + 1, time: index, text: `置顶 ${index}`, pinned: true })) });
+  const notice = page.getByText(/历史记录已满且全部置顶/);
+  await expect(notice).toBeVisible();
+  await page.locator('#source').fill('继续输入');
+  await page.locator('#start').click();
+  await expect(page.locator('#status-message')).toContainText('正在返回');
+  await expect(notice).toBeVisible();
+  expect(await page.locator('.window').evaluate(el => el.scrollWidth <= el.clientWidth && el.scrollHeight <= el.clientHeight)).toBe(true);
+  await page.screenshot({ path: 'test-results/history-full-pinned-320.png' });
+  await page.evaluate(() => window.relayTest.push({ phase: 'done', message: '已完成' }));
+  await expect(notice).toBeVisible();
+  await page.locator('#history-tab').click();
+  await page.getByRole('button', { name: /^取消置顶记录/ }).first().click();
+  await expect(notice).toHaveCount(0);
+});
+
 test('history rows and text preferences fit narrow widths and zoom without changing editor height', async ({ page }) => {
-  await openApp(page, { entries: Array.from({ length: 100 }, (_, index) => ({ id: 100 - index, time: Date.now() - index * 86400000, text: `  记录 ${index}\n第二行😀\n第三行` })) });
+  await openApp(page, { entries: Array.from({ length: 100 }, (_, index) => ({ pinned: false, id: 100 - index, time: Date.now() - index * 86400000, text: `  记录 ${index}\n第二行😀\n第三行` })) });
   for (const width of [600, 320]) for (const zoom of [1, 1.5]) {
     await page.setViewportSize({ width, height: 1100 });
     await page.evaluate(value => { document.body.style.zoom = String(value); }, zoom);
@@ -193,7 +246,10 @@ test('history rows and text preferences fit narrow widths and zoom without chang
     await page.locator('#history-tab').click();
     expect(await page.locator('.history-list').evaluate(el => el.scrollHeight > el.clientHeight)).toBe(true);
     expect(await page.locator('.history-list').evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true);
-    expect(await page.locator('.history-preview').first().evaluate(el => getComputedStyle(el).whiteSpace)).toBe('pre-wrap');
+    expect(await page.locator('.history-preview').first().evaluate(el => getComputedStyle(el).whiteSpace)).toBe('nowrap');
+    expect(await page.locator('.history-preview').first().evaluate(el => getComputedStyle(el).textOverflow)).toBe('ellipsis');
+    expect(await page.locator('.history-preview').first().evaluate(el => el.clientWidth)).toBeGreaterThanOrEqual(100);
+    expect(await page.locator('.history-meta').first().evaluate(el => el.clientHeight)).toBeLessThanOrEqual(20);
     const button = page.getByRole('button', { name: '清空历史', exact: true });
     expect(await button.evaluate(el => [getComputedStyle(el).height, getComputedStyle(el).borderRadius])).toEqual(['26px', '0px']);
     const clearRight = (await button.boundingBox())!;
@@ -201,7 +257,9 @@ test('history rows and text preferences fit narrow widths and zoom without chang
     const deleteRight = (await deleteButton.boundingBox())!;
     expect(Math.abs(clearRight.x + clearRight.width - deleteRight.x - deleteRight.width), `${width}px/${zoom}: history action right edges`).toBeLessThanOrEqual(1);
     const restore = page.locator('.history-entry').first().getByRole('button', { name: /^恢复记录/ });
-    await expect(restore).toHaveText('恢复');
+    await expect(restore).toHaveAttribute('title', '恢复记录');
+    await expect(deleteButton).toHaveAttribute('title', '删除记录');
+    expect(await page.locator('.history-entry').first().locator('.history-actions > button').evaluateAll(buttons => buttons.map(el => [getComputedStyle(el).width, getComputedStyle(el).height]))).toEqual(Array.from({ length: 3 }, () => ['26px', '26px']));
     await page.locator('.history-entry').first().getByRole('button', { name: /^查看记录/ }).click();
     expect((await page.locator('.window').boundingBox())!.height).toBe(height);
     await expect(page.getByLabel('历史记录全文')).toContainText('第三行');
@@ -215,7 +273,7 @@ test('history rows and text preferences fit narrow widths and zoom without chang
 });
 
 test('native task transitions protect history and consume the same stopping click', async ({ page }) => {
-  await openApp(page, { draft: 'current', entries: [{ id: 1, time: Date.now(), text: 'saved' }] });
+  await openApp(page, { draft: 'current', entries: [{ pinned: false, id: 1, time: Date.now(), text: 'saved' }] });
   await page.locator('#history-tab').click();
   await page.evaluate(() => window.relayTest.push({ phase: 'typing' }));
   await expect(page.locator('#input-tab')).toHaveAttribute('aria-selected', 'true');
@@ -517,7 +575,7 @@ for (const selector of ['#trim-trailing', '#clear']) {
 
 test('layout fills viewport heights at all widths, breakpoints and zoom', async ({ page }) => {
   test.setTimeout(90_000);
-  await openApp(page, { draft: '滚动内容\n'.repeat(200), entries: Array.from({ length: 100 }, (_, index) => ({ id: index + 1, time: Date.now(), text: `历史 ${index}\n完整正文` })) });
+  await openApp(page, { draft: '滚动内容\n'.repeat(200), entries: Array.from({ length: 100 }, (_, index) => ({ pinned: false, id: index + 1, time: Date.now(), text: `历史 ${index}\n完整正文` })) });
   for (const width of [600, 564, 521, 520, 510, 423, 422, 421, 420, 390, 320]) {
     let previous: { viewport: number; editor: number; footer: number } | undefined;
     for (const height of [340, 450, 881]) {

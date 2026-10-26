@@ -28,11 +28,11 @@ export const bridge = {
 };
 
 /** Full source of one task that reached native submission; time is Unix milliseconds. */
-export interface HistoryEntry { id: number; time: number; text: string }
+export interface HistoryEntry { id: number; time: number; text: string; pinned: boolean }
 /** Ordered local archive state; its preferences are independent of input timing. */
-export interface TextState { sequence: number; draft: string; entries: HistoryEntry[]; restoreDraft: boolean; saveHistory: boolean; canUndo: boolean; error: string | null }
+export interface TextState { sequence: number; draft: string; entries: HistoryEntry[]; restoreDraft: boolean; saveHistory: boolean; error: string | null }
 /** Mutations of local saved content; clear affects history and clearDraft affects saved draft only. */
-export type TextAction = { kind: 'preferences'; restoreDraft: boolean; saveHistory: boolean } | { kind: 'delete'; id: number } | { kind: 'undo' | 'clear' | 'clearDraft' | 'retry' };
+export type TextAction = { kind: 'preferences'; restoreDraft: boolean; saveHistory: boolean } | { kind: 'delete'; id: number } | { kind: 'pin'; id: number; pinned: boolean } | { kind: 'clear'; includePinned: boolean } | { kind: 'clearDraft' | 'retry' };
 /** Text storage commands are serialized by the native task and disk owners. */
 export const archiveBridge = {
   read: () => invoke<TextState>('get_text_state'),

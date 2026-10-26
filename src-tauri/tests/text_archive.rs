@@ -79,7 +79,7 @@ fn malformed_text_file_is_preserved_and_errors_exclude_source() {
 }
 
 #[test]
-fn writer_serializes_revisions_deletion_undo_preferences_and_flush() {
+fn writer_serializes_revisions_immediate_deletion_preferences_and_flush() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("text.json");
     let writer = Archive::open(path.clone(), |_| {});
@@ -92,15 +92,10 @@ fn writer_serializes_revisions_deletion_undo_preferences_and_flush() {
     assert_eq!(state.data.draft, "latest");
     let id = state.data.entries[0].id;
     let deleted = writer.action(TextAction::Delete { id }).unwrap();
-    assert!(deleted.can_undo);
     assert_eq!(deleted.data.entries[0].text, "first");
-    let restored = writer.action(TextAction::Undo).unwrap();
-    assert_eq!(restored.data.entries[0].text, "second");
-    writer.action(TextAction::Delete { id }).unwrap();
+    assert_eq!(TextData::load(&path).unwrap().entries.len(), 1);
+    assert!(serde_json::from_value::<TextAction>(serde_json::json!({"kind":"undo"})).is_err());
     writer.record("third".into());
-    let restored = writer.action(TextAction::Undo).unwrap();
-    assert_eq!(restored.data.entries[0].text, "third");
-    assert_eq!(restored.data.entries[1].text, "second");
     writer
         .action(TextAction::Preferences {
             restore_draft: false,
@@ -111,17 +106,126 @@ fn writer_serializes_revisions_deletion_undo_preferences_and_flush() {
     writer.record("private send".into());
     let state = writer.flush().unwrap();
     assert_eq!(state.data.draft, "latest");
-    assert_eq!(state.data.entries.len(), 3);
+    assert_eq!(state.data.entries.len(), 2);
     assert_eq!(TextData::load(&path).unwrap(), state.data);
-    writer.action(TextAction::Clear).unwrap();
-    assert!(writer
-        .action(TextAction::Undo)
-        .unwrap()
-        .data
-        .entries
-        .is_empty());
+    let cleared = writer
+        .action(
+            serde_json::from_value(serde_json::json!({"kind":"clear","includePinned":false}))
+                .unwrap(),
+        )
+        .unwrap();
+    assert!(cleared.data.entries.is_empty());
     writer.action(TextAction::ClearDraft).unwrap();
     assert_eq!(TextData::load(&path).unwrap().draft, "");
+}
+
+#[test]
+fn legacy_history_defaults_to_unpinned_without_losing_text() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("text.json");
+    std::fs::write(&path, r#"{"restoreDraft":true,"saveHistory":true,"draft":"saved","entries":[{"id":1,"time":10,"text":"original"}],"nextId":2}"#).unwrap();
+    let data = TextData::load(&path).unwrap();
+    assert_eq!(data.draft, "saved");
+    assert_eq!(data.entries[0].text, "original");
+    assert_eq!(
+        serde_json::to_value(&data).unwrap()["entries"][0]["pinned"],
+        false
+    );
+}
+
+#[test]
+fn pinning_persists_without_changing_time_and_clear_protects_pins() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("text.json");
+    let mut data = TextData::default();
+    data.update_draft("keep draft");
+    data.record("first", 10);
+    data.record("second", 20);
+    data.save(&path).unwrap();
+    let writer = Archive::open(path.clone(), |_| {});
+    writer.read().unwrap();
+    let pinned = writer
+        .action(
+            serde_json::from_value(serde_json::json!({"kind":"pin","id":1,"pinned":true})).unwrap(),
+        )
+        .unwrap();
+    let first = pinned
+        .data
+        .entries
+        .iter()
+        .find(|entry| entry.id == 1)
+        .unwrap();
+    assert_eq!(first.time, 10);
+    assert_eq!(serde_json::to_value(first).unwrap()["pinned"], true);
+    assert_eq!(TextData::load(&path).unwrap(), pinned.data);
+    writer.record("second".into());
+    let latest = writer.flush().unwrap();
+    assert_eq!(
+        latest.data.entries.len(),
+        2,
+        "pinning must not change adjacent deduplication"
+    );
+    let cleared = writer
+        .action(
+            serde_json::from_value(serde_json::json!({"kind":"clear","includePinned":false}))
+                .unwrap(),
+        )
+        .unwrap();
+    assert_eq!(cleared.data.entries.len(), 1);
+    assert_eq!(cleared.data.entries[0].text, "first");
+    assert_eq!(cleared.data.draft, "keep draft");
+    let cleared = writer
+        .action(
+            serde_json::from_value(serde_json::json!({"kind":"clear","includePinned":true}))
+                .unwrap(),
+        )
+        .unwrap();
+    assert!(cleared.data.entries.is_empty());
+    assert_eq!(TextData::load(&path).unwrap().draft, "keep draft");
+}
+
+#[test]
+fn capacity_evicts_oldest_unpinned_and_preserves_a_full_pinned_archive() {
+    let mut data = TextData::default();
+    for time in 1..=100 {
+        data.record(&format!("text {time}"), time);
+    }
+    let mut json = serde_json::to_value(&data).unwrap();
+    for entry in json["entries"].as_array_mut().unwrap() {
+        entry["pinned"] = serde_json::json!(entry["id"] == 1);
+    }
+    let mut data: TextData = serde_json::from_value(json).unwrap();
+    data.entries
+        .iter_mut()
+        .find(|entry| entry.id == 50)
+        .unwrap()
+        .time = 0;
+    data.record("new", 101);
+    assert_eq!(data.entries.len(), 100);
+    assert!(data.entries.iter().any(|entry| entry.text == "text 1"));
+    assert!(data.entries.iter().any(|entry| entry.text == "text 2"));
+    assert!(!data.entries.iter().any(|entry| entry.text == "text 50"));
+    let mut json = serde_json::to_value(&data).unwrap();
+    for entry in json["entries"].as_array_mut().unwrap() {
+        entry["pinned"] = serde_json::json!(true);
+    }
+    let mut data: TextData = serde_json::from_value(json).unwrap();
+    let before = data.clone();
+    data.record("blocked", 102);
+    assert_eq!(
+        data, before,
+        "full pinned archive must preserve entries and next ID"
+    );
+    data.record("new", 103);
+    assert_eq!(data.entries.len(), 100);
+    assert_eq!(
+        data.entries[0].time, 103,
+        "identical latest text only refreshes time"
+    );
+    assert_eq!(
+        serde_json::to_value(&data).unwrap()["entries"][0]["pinned"],
+        true
+    );
 }
 
 #[test]
@@ -168,6 +272,44 @@ fn concurrent_archive_owner_cannot_overwrite_and_can_retry_after_release() {
         assert!(std::time::Instant::now() < deadline);
         std::thread::yield_now();
     }
+}
+
+#[test]
+fn a_full_pinned_archive_keeps_sending_and_preserves_saved_history() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("text.json");
+    let mut data = TextData::default();
+    for time in 1..=100 {
+        data.record(&format!("saved {time}"), time);
+    }
+    for entry in &mut data.entries {
+        entry.pinned = true;
+    }
+    data.save(&path).unwrap();
+    let archive = Archive::open(path.clone(), |_| {});
+    archive.read().unwrap();
+    let mut engine = Engine::new(Settings::default());
+    engine.record_target(TargetInfo {
+        x: 1,
+        y: 1,
+        title: "receiver".into(),
+    });
+    engine.sync(Draft {
+        revision: 1,
+        text: "ab".into(),
+        settings: serde_json::to_value(Settings::default()).unwrap(),
+    });
+    engine.start(None, 0, 1).unwrap();
+    engine.clicked_target(0);
+    assert!(engine.due(150, false, false).is_some());
+    archive.record(engine.take_history_text().unwrap());
+    engine.submitted(150, Ok(()));
+    assert!(engine.due(200, false, false).is_some());
+    engine.submitted(200, Ok(()));
+    assert_eq!(engine.snapshot.phase, key_relay::task::Phase::Done);
+    assert_eq!(engine.snapshot.sent, 2);
+    assert_eq!(archive.flush().unwrap().data, data);
+    assert_eq!(TextData::load(&path).unwrap(), data);
 }
 
 #[test]

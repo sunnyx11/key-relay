@@ -14,6 +14,8 @@ pub struct HistoryEntry {
     pub id: u64,
     pub time: u64,
     pub text: String,
+    #[serde(default)]
+    pub pinned: bool,
 }
 
 /// Per-user text.json data; disabling a preference preserves previously saved data.
@@ -112,16 +114,29 @@ impl TextData {
             entry.time = time;
             return;
         }
+        if self.entries.len() >= 100 {
+            let Some(index) = self
+                .entries
+                .iter()
+                .enumerate()
+                .filter(|(_, entry)| !entry.pinned)
+                .min_by_key(|(_, entry)| (entry.time, entry.id))
+                .map(|(index, _)| index)
+            else {
+                return;
+            };
+            self.entries.remove(index);
+        }
         self.entries.insert(
             0,
             HistoryEntry {
                 id: self.next_id,
                 time,
                 text: text.into(),
+                pinned: false,
             },
         );
         self.next_id += 1;
-        self.entries.truncate(100);
     }
 }
 
@@ -132,7 +147,6 @@ pub struct TextState {
     pub sequence: u64,
     #[serde(flatten)]
     pub data: TextData,
-    pub can_undo: bool,
     pub error: Option<String>,
 }
 /// User text mutations accepted only while the task owner is idle.
@@ -150,8 +164,13 @@ pub enum TextAction {
     Delete {
         id: u64,
     },
-    Undo,
-    Clear,
+    Pin {
+        id: u64,
+        pinned: bool,
+    },
+    Clear {
+        include_pinned: bool,
+    },
     ClearDraft,
     Retry,
 }
@@ -185,7 +204,6 @@ impl Archive {
             let mut revision = 0;
             let mut dirty = false;
             let mut error = None;
-            let mut deleted: Option<(HistoryEntry, u64)> = None;
             loop {
                 let received = receiver.recv_timeout(if dirty {
                     Duration::from_millis(250)
@@ -260,28 +278,19 @@ impl Archive {
                                 value.save_history = save_history;
                             }
                             TextAction::Delete { id } => {
-                                if let Some(index) =
-                                    value.entries.iter().position(|entry| entry.id == id)
+                                value.entries.retain(|entry| entry.id != id);
+                            }
+                            TextAction::Pin { id, pinned } => {
+                                if let Some(entry) =
+                                    value.entries.iter_mut().find(|entry| entry.id == id)
                                 {
-                                    deleted = Some((value.entries.remove(index), now() + 10000));
+                                    entry.pinned = pinned;
                                 }
                             }
-                            TextAction::Undo => {
-                                if let Some((entry, expires)) = deleted.take() {
-                                    if now() <= expires {
-                                        let index = value
-                                            .entries
-                                            .iter()
-                                            .position(|other| other.id < entry.id)
-                                            .unwrap_or(value.entries.len());
-                                        value.entries.insert(index, entry);
-                                        value.entries.truncate(100);
-                                    }
-                                }
-                            }
-                            TextAction::Clear => {
-                                value.entries.clear();
-                                deleted = None;
+                            TextAction::Clear { include_pinned } => {
+                                value
+                                    .entries
+                                    .retain(|entry| entry.pinned && !include_pinned);
                             }
                             TextAction::ClearDraft => value.draft.clear(),
                             TextAction::Retry => {}
@@ -295,7 +304,6 @@ impl Archive {
                             let _ = tx.send(Ok(TextState {
                                 sequence: state_sequence,
                                 data: TextData::default(),
-                                can_undo: false,
                                 error: None,
                             }));
                             continue;
@@ -327,9 +335,6 @@ impl Archive {
                         let state = TextState {
                             sequence: state_sequence,
                             data: value.clone(),
-                            can_undo: deleted
-                                .as_ref()
-                                .is_some_and(|(_, expires)| now() <= *expires),
                             error: error.clone(),
                         };
                         if publish {

@@ -134,6 +134,7 @@ export default function App() {
       <span>{relay.loadError || relay.archive.error || '正在恢复上次内容…'}</span>
       {relay.loadError ? <button className="button" onClick={relay.retryLoad}>重试读取</button> : relay.archive.error && <button className="button" disabled={historyDisabled} onClick={() => { void relay.changeArchive({ kind: 'retry' }); }}>重试保存</button>}
     </div>}
+    {relay.ready && relay.archive.saveHistory && relay.archive.entries.length === 100 && relay.archive.entries.every(entry => entry.pinned) && <div className="storage-notice" role="status">历史记录已满且全部置顶，新输入将不保存到历史。请取消部分置顶或删除记录。</div>}
     <div className="workspace">
       <nav className="tabs" role="tablist" aria-label="功能页签">
         {tabs.map(({ name, label }) => <button key={name} id={`${name}-tab`} className="tab" role="tab" aria-selected={tab === name} aria-controls={`${name}-panel`} tabIndex={tab === name ? 0 : -1} disabled={tabDisabled(name)} onClick={() => setTab(name)} onKeyDown={tabKey}>{label}{name === 'about' && ['available', 'ready'].includes(updates.snapshot.phase) && <span className="update-indicator" title="有新版本" aria-hidden="true" />}</button>)}

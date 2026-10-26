@@ -34,6 +34,10 @@ test('duplicate launch restores the existing window and keeps its session', asyn
       await runtime.__TAURI_INTERNALS__.invoke('plugin:window|set_size', { label: 'main', value: { Logical: { width: 600, height: 450 } } });
     });
     await page.locator('#source').fill('原窗口中的最新编辑');
+    await page.locator('#history-tab').click();
+    await page.getByRole('button', { name: /^置顶记录/ }).click();
+    await expect(page.getByRole('button', { name: /^取消置顶记录/ })).toHaveAttribute('aria-pressed', 'true');
+    await page.locator('#input-tab').click();
     await expect(page.getByRole('button', { name: '取消置顶' })).toHaveAttribute('aria-pressed', 'true');
     await page.getByRole('button', { name: '取消置顶' }).click();
     await page.locator('#settings-tab').click();
@@ -62,6 +66,16 @@ test('duplicate launch restores the existing window and keeps its session', asyn
     expect(await restored.evaluate(() => ({ width: innerWidth, height: innerHeight }))).toEqual({ width: 600, height: 450 });
     await restored.locator('#history-tab').click();
     await expect(restored.locator('.history-entry')).toHaveCount(1);
+    await expect(restored.getByRole('heading', { name: '置顶', exact: true })).toBeVisible();
+    await expect(restored.getByRole('button', { name: /^取消置顶记录/ })).toHaveAttribute('aria-pressed', 'true');
+    await expect(restored.locator('.history-preview')).toHaveCSS('white-space', 'nowrap');
+    await restored.getByRole('button', { name: '清空历史', exact: true }).click();
+    await expect(restored.getByRole('group', { name: '清空历史确认' })).toContainText('删除 0 条记录，保留 1 条置顶记录');
+    await expect(restored.getByRole('button', { name: '确认' })).toBeDisabled();
+    await restored.getByRole('checkbox', { name: '同时删除置顶记录' }).check();
+    await restored.getByRole('button', { name: '确认' }).click();
+    await expect(restored.locator('.history-entry')).toHaveCount(0);
+    await expect(restored.getByRole('button', { name: '撤销删除' })).toHaveCount(0);
     await restored.getByRole('button', { name: '关闭' }).click();
     await expect.poll(() => reopened.exitCode, { timeout: 10_000 }).toBe(0);
   } finally {
