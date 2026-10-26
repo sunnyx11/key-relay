@@ -1,19 +1,25 @@
 import { test, expect, type Page } from '@playwright/test';
-import type { Snapshot, Draft, UpdateSnapshot } from '../../src/bridge';
+import type { Snapshot, Draft, UpdateSnapshot, TextState, TextAction, HistoryEntry } from '../../src/bridge';
 
 declare global {
-  interface Window { relayTest: { state: Snapshot; push: (state: Partial<Snapshot>) => void; calls: string[]; openedUrls: string[]; draft?: Draft; update: UpdateSnapshot; updatePush: (state: Partial<UpdateSnapshot>) => void } }
+  interface Window { relayTest: { state: Snapshot; push: (state: Partial<Snapshot>) => void; calls: string[]; openedUrls: string[]; draft?: Draft; update: UpdateSnapshot; updatePush: (state: Partial<UpdateSnapshot>) => void; text: TextState; textPush: (state: Partial<TextState>) => void } }
 }
 
-async function openApp(page: Page) {
-  await page.addInitScript(() => {
+async function openApp(page: Page, saved?: Partial<TextState>) {
+  await page.addInitScript(initialText => {
     const callbacks = new Map<number, (event: unknown) => void>();
     const listeners = new Map<number, string>();
     let next = 1;
     let pinned = false;
     const state: Snapshot = { sequence: 1, phase: 'idle', sent: 0, total: 0, target: { x: -900, y: 240, title: '记事本' }, message: '', settings: { intervalMs: 50, shortcut: 'F8' }, shortcutError: null };
     const update: UpdateSnapshot = { sequence: 1, phase: 'idle', installed: true, autoCheck: true, version: null, notes: '', downloaded: 0, total: null, message: '' };
-    window.relayTest = { state, update, updatePush: patch => {
+    const text: TextState = { sequence: 1, draft: '', entries: [], restoreDraft: true, saveHistory: true, canUndo: false, error: null, ...JSON.parse(localStorage.getItem('relay-text-test') || JSON.stringify(initialText || {})) };
+    let deleted: { entry: HistoryEntry; index: number } | null = null;
+    window.relayTest = { state, update, text, textPush: patch => {
+      Object.assign(text, patch, { sequence: text.sequence + 1 });
+      localStorage.setItem('relay-text-test', JSON.stringify(text));
+      for (const [id, event] of listeners) if (event === 'text-state') callbacks.get(id)?.({ event, id, payload: structuredClone(text) });
+    }, updatePush: patch => {
       Object.assign(update, patch, { sequence: update.sequence + 1 });
       for (const [id, event] of listeners) if (event === 'update-state') callbacks.get(id)?.({ event, id, payload: structuredClone(update) });
     }, calls: [], openedUrls: [], push: patch => {
@@ -27,6 +33,20 @@ async function openApp(page: Page) {
         unregisterCallback: (id: number) => callbacks.delete(id),
         invoke: async (command: string, args: Record<string, unknown>) => {
           window.relayTest.calls.push(command);
+          if (command === 'get_text_state' || command === 'flush_text') return structuredClone(text);
+          if (command === 'change_text_state') {
+            const action = args.action as TextAction;
+            if (action.kind === 'preferences') Object.assign(text, { restoreDraft: action.restoreDraft, saveHistory: action.saveHistory });
+            if (action.kind === 'delete') {
+              const index = text.entries.findIndex(entry => entry.id === action.id);
+              if (index >= 0) { deleted = { index, entry: text.entries.splice(index, 1)[0] }; text.canUndo = true; }
+            }
+            if (action.kind === 'undo' && deleted) { text.entries.splice(deleted.index, 0, deleted.entry); deleted = null; text.canUndo = false; }
+            if (action.kind === 'clear') { text.entries = []; text.canUndo = false; deleted = null; }
+            if (action.kind === 'clearDraft') text.draft = '';
+            window.relayTest.textPush({ error: null });
+            return structuredClone(text);
+          }
           if (command === 'get_update_state') return structuredClone(update);
           if (command === 'check_update') { window.relayTest.updatePush({ phase: 'available', version: '0.3.0', notes: '更新说明\n改善输入体验。' }); return structuredClone(update); }
           if (command === 'download_update') { window.relayTest.updatePush({ phase: 'ready' }); return structuredClone(update); }
@@ -39,7 +59,7 @@ async function openApp(page: Page) {
           if (command === 'plugin:window|is_always_on_top') return pinned;
           if (command === 'plugin:window|set_always_on_top') { pinned = args.value as boolean; return; }
           if (command.startsWith('plugin:window|')) return command.endsWith('is_maximized') ? false : null;
-          if (command === 'sync_draft') { window.relayTest.draft = args.draft as Draft; return; }
+          if (command === 'sync_draft') { window.relayTest.draft = args.draft as Draft; if (text.restoreDraft) window.relayTest.textPush({ draft: window.relayTest.draft.text }); return; }
           if (command === 'start_task') {
             window.relayTest.draft = args.draft as Draft;
             window.relayTest.push({ phase: 'targeting', total: Array.from(window.relayTest.draft.text).length, message: '正在返回已记录的输入位置' });
@@ -51,10 +71,167 @@ async function openApp(page: Page) {
       },
       __TAURI_EVENT_PLUGIN_INTERNALS__: { unregisterListener: (_event: string, id: number) => { callbacks.delete(id); listeners.delete(id); } },
     });
-  });
+  }, saved || null);
   await page.goto('/'); await page.waitForLoadState('networkidle');
   await expect(page.getByRole('button', { name: '开始输入' })).toBeEnabled();
 }
+
+test('saved draft survives reload, clear stays empty and disabled saving preserves the stored copy', async ({ page }) => {
+  await openApp(page, { draft: '上次\n  草稿😀' });
+  const source = page.locator('#source');
+  await expect(source).toHaveValue('上次\n  草稿😀');
+  await source.fill('尚未发送\n  最新😀');
+  await page.reload();
+  await expect(source).toHaveValue('尚未发送\n  最新😀');
+  await page.getByRole('button', { name: '清空', exact: true }).click();
+  await page.reload();
+  await expect(source).toHaveValue('');
+  await source.fill('保留的草稿');
+  await page.locator('#settings-tab').click();
+  await page.getByRole('checkbox', { name: '保存并恢复上次编辑内容' }).uncheck();
+  await page.locator('#input-tab').click();
+  await source.fill('关闭保存后的编辑');
+  await page.reload();
+  await expect(source).toHaveValue('');
+  expect(await page.evaluate(() => window.relayTest.text.draft)).toBe('保留的草稿');
+  await page.locator('#settings-tab').click();
+  await page.getByRole('button', { name: '清除已保存草稿', exact: true }).click();
+  await page.getByRole('button', { name: '确认清除草稿' }).click();
+  await expect.poll(() => page.evaluate(() => window.relayTest.text.draft)).toBe('');
+});
+
+test('history viewing preserves edits, search and list scroll before an explicit restoration', async ({ page }) => {
+  const original = '首行\n  缩进😀\n\t末行\n' + '完整正文\n'.repeat(80);
+  await openApp(page, { draft: '当前编辑', entries: Array.from({ length: 30 }, (_, index) => ({ id: 30 - index, time: Date.now(), text: index === 20 ? original : `正文 ${index}` })) });
+  await page.locator('#history-tab').click();
+  const preview = page.getByRole('button', { name: /^查看记录：首行/ });
+  await preview.scrollIntoViewIfNeeded();
+  const top = await page.locator('.history-list').evaluate(el => el.scrollTop);
+  await preview.click();
+  await expect(page.getByRole('region', { name: '历史全文' })).toBeVisible();
+  expect(await page.getByLabel('历史记录全文').textContent()).toBe(original);
+  expect(await page.getByLabel('历史记录全文').evaluate(el => el.scrollHeight > el.clientHeight)).toBe(true);
+  await expect(page.locator('#source')).toHaveValue('当前编辑');
+  expect(await page.evaluate(() => window.relayTest.text.entries.length)).toBe(30);
+  await page.getByRole('button', { name: '返回历史' }).click();
+  await expect(preview).toBeFocused();
+  expect(await page.locator('.history-list').evaluate(el => el.scrollTop)).toBe(top);
+  await page.getByRole('searchbox').fill('末行');
+  await preview.click();
+  await page.getByRole('button', { name: '返回历史' }).click();
+  await expect(page.getByRole('searchbox')).toHaveValue('末行');
+  await page.getByRole('button', { name: /^恢复记录/ }).click();
+  await expect(page.locator('#source')).toHaveValue(original);
+  await page.keyboard.press('Control+z');
+  await expect(page.locator('#source')).toHaveValue('当前编辑');
+});
+
+test('history restores the entire original as one native undo step and then returns to target status', async ({ page }) => {
+  const original = '第一行\n  中😀e\u0301\n末行';
+  await openApp(page, { entries: [{ id: 1, text: original, time: Date.now() }] });
+  const source = page.locator('#source');
+  await source.fill('当前编辑');
+  await page.evaluate(() => window.relayTest.push({ phase: 'done', message: '已完成', sent: 1, total: 1 }));
+  await page.locator('#history-tab').click();
+  await page.getByRole('button', { name: /^恢复记录/ }).click();
+  await expect(source).toHaveValue(original);
+  await expect(source).toBeFocused();
+  expect(await source.evaluate((el: HTMLTextAreaElement) => [el.selectionStart, el.selectionEnd])).toEqual([original.length, original.length]);
+  await expect(page.locator('#status-message')).toHaveText('已恢复历史内容 · Ctrl+Z 可撤销');
+  await expect(page.locator('#status-message')).toHaveText('已记录输入位置', { timeout: 5000 });
+  await page.keyboard.press('Control+z');
+  await expect(source).toHaveValue('当前编辑');
+  await page.keyboard.press('Control+y');
+  await expect(source).toHaveValue(original);
+  await expect.poll(() => page.evaluate(() => window.relayTest.draft?.text)).toBe(original);
+  expect(await page.evaluate(() => window.relayTest.text.entries.length)).toBe(1);
+});
+
+test('history searches complete originals and keeps deletion, undo and clear separate from restoration', async ({ page }) => {
+  const today = Date.now();
+  const yesterday = new Date(); yesterday.setDate(yesterday.getDate() - 1);
+  await openApp(page, { draft: '当前草稿', entries: [
+    { id: 2, time: today, text: '第一行\n  第二行\n隐藏在预览之后的匹配内容😀' },
+    { id: 1, time: yesterday.getTime(), text: '昨天的内容' },
+  ] });
+  await page.locator('#history-tab').click();
+  await expect(page.getByRole('heading', { name: '今天' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '昨天' })).toBeVisible();
+  await page.getByRole('searchbox').fill('预览之后');
+  await expect(page.locator('.history-entry')).toHaveCount(1);
+  await page.getByRole('searchbox').fill('');
+  await page.locator('.history-entry').first().getByRole('button', { name: /^删除记录/ }).click();
+  await expect(page.locator('.history-entry')).toHaveCount(1);
+  await expect(page.locator('#history-tab')).toHaveAttribute('aria-selected', 'true');
+  await page.getByRole('button', { name: '撤销删除' }).click();
+  await expect(page.locator('.history-entry')).toHaveCount(2);
+  await page.getByRole('button', { name: '清空历史', exact: true }).click();
+  await expect(page.getByRole('button', { name: '取消', exact: true })).toBeFocused();
+  await page.getByRole('button', { name: '取消', exact: true }).click();
+  await expect(page.locator('.history-entry')).toHaveCount(2);
+  await page.getByRole('button', { name: '清空历史', exact: true }).click();
+  await page.getByRole('button', { name: '确认清空历史' }).click();
+  await expect(page.locator('.history-entry')).toHaveCount(0);
+  expect(await page.evaluate(() => window.relayTest.text.draft)).toBe('当前草稿');
+  await page.locator('#input-tab').click();
+  await expect(page.locator('#source')).toHaveValue('当前草稿');
+});
+
+test('history rows and text preferences fit narrow widths and zoom without changing editor height', async ({ page }) => {
+  await openApp(page, { entries: Array.from({ length: 100 }, (_, index) => ({ id: 100 - index, time: Date.now() - index * 86400000, text: `  记录 ${index}\n第二行😀\n第三行` })) });
+  for (const width of [600, 320]) for (const zoom of [1, 1.5]) {
+    await page.setViewportSize({ width, height: 1100 });
+    await page.evaluate(value => { document.body.style.zoom = String(value); }, zoom);
+    await page.locator('#input-tab').click();
+    const height = (await page.locator('.window').boundingBox())!.height;
+    for (const tab of ['history', 'settings', 'about', 'input']) {
+      await page.locator(`#${tab}-tab`).click();
+      expect((await page.locator('.window').boundingBox())!.height).toBe(height);
+      const overflow = await page.locator('.window').evaluate(root => [...root.querySelectorAll('*')].filter(el => getComputedStyle(el).visibility !== 'hidden' && el.getBoundingClientRect().right > root.getBoundingClientRect().right + 1).map(el => el.id || el.className));
+      expect(await page.locator('.window').evaluate(el => el.scrollWidth <= el.clientWidth), `${width}px/${zoom}/${tab}: ${overflow.join(', ')}`).toBe(true);
+    }
+    await page.locator('#history-tab').click();
+    expect(await page.locator('.history-list').evaluate(el => el.scrollHeight > el.clientHeight)).toBe(true);
+    expect(await page.locator('.history-list').evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true);
+    expect(await page.locator('.history-preview').first().evaluate(el => getComputedStyle(el).whiteSpace)).toBe('pre-wrap');
+    const button = page.getByRole('button', { name: '清空历史', exact: true });
+    expect(await button.evaluate(el => [getComputedStyle(el).height, getComputedStyle(el).borderRadius])).toEqual(['26px', '0px']);
+    const clearRight = (await button.boundingBox())!;
+    const deleteButton = page.locator('.history-entry').first().getByRole('button', { name: /^删除记录/ });
+    const deleteRight = (await deleteButton.boundingBox())!;
+    expect(Math.abs(clearRight.x + clearRight.width - deleteRight.x - deleteRight.width), `${width}px/${zoom}: history action right edges`).toBeLessThanOrEqual(1);
+    const restore = page.locator('.history-entry').first().getByRole('button', { name: /^恢复记录/ });
+    await expect(restore).toHaveText('恢复');
+    await page.locator('.history-entry').first().getByRole('button', { name: /^查看记录/ }).click();
+    expect((await page.locator('.window').boundingBox())!.height).toBe(height);
+    await expect(page.getByLabel('历史记录全文')).toContainText('第三行');
+    expect(await page.getByLabel('历史记录全文').evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true);
+    await page.getByRole('button', { name: '返回历史' }).click();
+    await page.locator('.window').screenshot({ path: `test-results/history-${width}-${zoom}.png` });
+    await page.locator('#settings-tab').click();
+    await page.getByRole('checkbox', { name: '保存历史输入记录' }).scrollIntoViewIfNeeded();
+    expect(await page.locator('.settings-content').evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true);
+  }
+});
+
+test('native task transitions protect history and consume the same stopping click', async ({ page }) => {
+  await openApp(page, { draft: 'current', entries: [{ id: 1, time: Date.now(), text: 'saved' }] });
+  await page.locator('#history-tab').click();
+  await page.evaluate(() => window.relayTest.push({ phase: 'typing' }));
+  await expect(page.locator('#input-tab')).toHaveAttribute('aria-selected', 'true');
+  await expect(page.locator('#history-tab')).toBeDisabled();
+  await page.locator('#history-tab').dispatchEvent('pointerdown');
+  await page.evaluate(() => window.relayTest.push({ phase: 'stopped' }));
+  await page.locator('#history-tab').dispatchEvent('click', { detail: 1 });
+  await expect(page.locator('#input-tab')).toHaveAttribute('aria-selected', 'true');
+  await page.locator('#history-tab').click();
+  await expect(page.locator('#history-tab')).toHaveAttribute('aria-selected', 'true');
+  await page.evaluate(() => window.relayTest.push({ interactionBlocked: true }));
+  await expect(page.getByRole('button', { name: /^恢复记录/ })).toBeDisabled();
+  await expect(page.getByRole('button', { name: /^删除记录/ })).toBeDisabled();
+  await page.evaluate(() => window.relayTest.push({ interactionBlocked: false }));
+  await expect(page.getByRole('button', { name: /^恢复记录/ })).toBeEnabled();
+});
 
 test('recorded negative coordinates survive editing and invalidation disables button startup', async ({ page }) => {
   await openApp(page);
@@ -137,7 +314,7 @@ test('update confirmation remains usable at 320px and preserves the editor after
   expect(await page.evaluate(() => window.relayTest.calls.includes('download_update'))).toBe(false);
   await page.getByRole('button', { name: '下载更新' }).click();
   await page.getByRole('button', { name: '安装并重启', exact: true }).click();
-  await expect(page.getByText('重启后将清除编辑框中的全部文本，请先保存需要保留的内容。')).toBeVisible();
+  await expect(page.getByText('安装前将保存当前草稿，重启后自动恢复。外部输入位置需要重新选择。')).toBeVisible();
   await page.locator('.window').screenshot({ path: 'test-results/update-confirmation-320.png' });
   expect((await page.locator('.window').boundingBox())!.height).toBe(height);
   expect(await page.locator('.about-content').evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true);

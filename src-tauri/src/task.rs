@@ -56,6 +56,7 @@ pub struct Engine {
     cycle: u64,
     installing: bool,
     target_clicked: bool,
+    history_text: Option<String>,
 }
 impl Engine {
     /// Initialize idle state and an empty draft using validated preferences.
@@ -86,6 +87,7 @@ impl Engine {
             cycle: 0,
             installing: false,
             target_clicked: false,
+            history_text: None,
         }
     }
     /// True while a task owns the send pipeline.
@@ -155,6 +157,7 @@ impl Engine {
         self.startup_key = shortcut;
         self.cycle = cycle;
         self.pending = units(&self.draft.text);
+        self.history_text = Some(self.draft.text.clone());
         self.spacing = settings.interval_ms;
         self.target_clicked = false;
         self.deadline = now + 2000;
@@ -255,6 +258,14 @@ impl Engine {
         }
         if self.snapshot.phase == Phase::Typing && now >= self.deadline {
             self.pending.get(self.snapshot.sent).copied()
+        } else {
+            None
+        }
+    }
+    /// Take the frozen original once when sending starts; preparation alone creates no history.
+    pub fn take_history_text(&mut self) -> Option<String> {
+        if self.snapshot.phase == Phase::Typing {
+            self.history_text.take()
         } else {
             None
         }

@@ -278,7 +278,7 @@ pub async fn install_update(
     confirmed: bool,
 ) -> Result<UpdateSnapshot, String> {
     if !confirmed {
-        return Err("安装更新需要确认重启后清除编辑文本。".into());
+        return Err("安装更新需要确认重启。".into());
     }
     let (candidate, bytes) = {
         let mut data = updates.data.lock().expect("update state lock");

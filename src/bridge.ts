@@ -22,7 +22,23 @@ export const bridge = {
   start: (draft: Draft) => invoke<Snapshot>('start_task', { draft }),
   cancel: () => invoke<Snapshot>('cancel_task'),
   save: (settings: Settings) => invoke<Snapshot>('save_settings', { settings }),
+  close: () => invoke<void>('close_app'),
+  subscribeClose: (handler: () => void) => listen('relay-close-requested', handler),
   subscribe: (handler: (state: Snapshot) => void) => listen<Snapshot>('relay-state', event => handler(event.payload)),
+};
+
+/** Full source of one task that reached native submission; time is Unix milliseconds. */
+export interface HistoryEntry { id: number; time: number; text: string }
+/** Ordered local archive state; its preferences are independent of input timing. */
+export interface TextState { sequence: number; draft: string; entries: HistoryEntry[]; restoreDraft: boolean; saveHistory: boolean; canUndo: boolean; error: string | null }
+/** Mutations of local saved content; clear affects history and clearDraft affects saved draft only. */
+export type TextAction = { kind: 'preferences'; restoreDraft: boolean; saveHistory: boolean } | { kind: 'delete'; id: number } | { kind: 'undo' | 'clear' | 'clearDraft' | 'retry' };
+/** Text storage commands are serialized by the native task and disk owners. */
+export const archiveBridge = {
+  read: () => invoke<TextState>('get_text_state'),
+  change: (action: TextAction) => invoke<TextState>('change_text_state', { action }),
+  flush: () => invoke<TextState>('flush_text'),
+  subscribe: (handler: (state: TextState) => void) => listen<TextState>('text-state', event => handler(event.payload)),
 };
 
 /** Ordered update metadata; package bytes and signing keys stay in Rust. */

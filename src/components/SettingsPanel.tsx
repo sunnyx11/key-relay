@@ -1,8 +1,10 @@
+import type { ReactNode } from 'react';
 import { defaults, type DraftSettings, type Settings } from '../bridge';
 
 /** Settings fields keep invalid drafts visible and show errors beside their controls. */
-export function SettingsPanel({ hidden, busy, settings, shortcutError, onChange }: { hidden: boolean; busy: boolean; settings: DraftSettings; shortcutError: string | null; onChange: (value: DraftSettings) => void }) {
+export function SettingsPanel({ hidden, busy, settings, shortcutError, onChange, children }: { hidden: boolean; busy: boolean; settings: DraftSettings; shortcutError: string | null; onChange: (value: DraftSettings) => void; children?: ReactNode }) {
   return <section className="panel" id="settings-panel" role="tabpanel" aria-labelledby="settings-tab" hidden={hidden} inert={hidden}>
+    <div className="settings-content">
     <div className="settings-heading"><h2>输入设置</h2><button className="button" disabled={busy} onClick={() => onChange(defaults)}>恢复默认</button></div>
     <div className="setting-row">
       <div className="setting-copy"><label htmlFor="shortcut">快捷键</label><p id="shortcut-note">选定输入位置，松开组合键后开始</p></div>
@@ -13,6 +15,8 @@ export function SettingsPanel({ hidden, busy, settings, shortcutError, onChange 
     </div>
     <NumberSetting id="interval" label="字符间隔" note="10～1,000 毫秒，数值越大输入越慢" unit="毫秒" min={10} max={1000} value={settings.intervalMs} disabled={busy} error="请输入 10～1,000 毫秒的整数。" onChange={value => onChange({ ...settings, intervalMs: value })} />
     <p className="setting-note">输入期间，鼠标移动和普通按键继续；按 Esc 或点击鼠标停止。</p>
+    {children}
+    </div>
   </section>;
 }
 function NumberSetting({ id, label, note, unit, min, max, value, disabled, error, onChange }: { id: string; label: string; note: string; unit: string; min: number; max: number; value: number | null; disabled: boolean; error: string; onChange: (value: number | null) => void }) {

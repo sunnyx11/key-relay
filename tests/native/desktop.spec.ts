@@ -1,12 +1,68 @@
-import { test, expect, chromium } from '@playwright/test';
+import { test, expect, chromium, type Browser } from '@playwright/test';
+import { once } from 'node:events';
 import { execFileSync, spawn } from 'node:child_process';
-import { resolve } from 'node:path';
+import { resolve, join } from 'node:path';
+import { mkdtempSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import config from '../../src-tauri/tauri.conf.json' with { type: 'json' };
+
+let configDir: string;
+test.beforeAll(() => { configDir = mkdtempSync(join(tmpdir(), 'key-relay-desktop-')); });
+test.afterAll(() => { rmSync(configDir, { recursive: true, force: true }); });
+
+test('duplicate launch restores the existing window and keeps its session', async () => {
+  const executable = resolve(process.env.KEY_RELAY_TEST_EXECUTABLE || 'src-tauri/target/release/key-relay.exe');
+  const env = { ...process.env, KEY_RELAY_TEST_CONFIG_DIR: configDir, WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: '--remote-debugging-port=9229' };
+  writeFileSync(join(configDir, 'text.json'), JSON.stringify({ restoreDraft: true, saveHistory: true, draft: '测试保存草稿', entries: [{ id: 1, time: Date.now(), text: '已保存历史\n  完整正文' }], nextId: 2 }));
+  writeFileSync(join(configDir, 'updates.json'), JSON.stringify({ autoCheck: false }));
+  const children: ReturnType<typeof spawn>[] = [];
+  let browser: Browser | undefined;
+  try {
+    const first = spawn(executable, [], { env, stdio: 'ignore' }); children.push(first);
+    await expect.poll(async () => { try { return (await fetch('http://127.0.0.1:9229/json/version')).ok; } catch { return false; } }, { timeout: 25_000 }).toBe(true);
+    browser = await chromium.connectOverCDP('http://127.0.0.1:9229');
+    const page = browser.contexts()[0].pages()[0];
+    await expect(page.locator('#source')).toBeEditable();
+    await expect(page.locator('#source')).toHaveValue('测试保存草稿');
+    await page.locator('#source').fill('原窗口中的最新编辑');
+    await page.getByRole('button', { name: '置顶窗口' }).click();
+    await page.locator('#settings-tab').click();
+    await page.getByRole('button', { name: '最小化' }).click();
+    const isMinimized = () => page.evaluate(() => (window as unknown as { __TAURI_INTERNALS__: { invoke: (command: string, args: unknown) => Promise<boolean> } }).__TAURI_INTERNALS__.invoke('plugin:window|is_minimized', { label: 'main' }));
+    await expect.poll(isMinimized).toBe(true);
+    const second = spawn(executable, [], { env: { ...env, WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: '--remote-debugging-port=9230' }, stdio: 'ignore' }); children.push(second);
+    await expect.poll(() => second.exitCode, { timeout: 5_000 }).toBe(0);
+    await expect.poll(isMinimized).toBe(false);
+    await expect.poll(() => page.evaluate(() => document.hasFocus())).toBe(true);
+    await expect(page.locator('#settings-tab')).toHaveAttribute('aria-selected', 'true');
+    await expect(page.getByRole('button', { name: '取消置顶' })).toHaveAttribute('aria-pressed', 'true');
+    await page.locator('#input-tab').click();
+    await expect(page.locator('#source')).toHaveValue('原窗口中的最新编辑');
+    await page.getByRole('button', { name: '关闭' }).click();
+    await expect.poll(() => first.exitCode, { timeout: 10_000 }).toBe(0);
+    await browser.close(); browser = undefined;
+
+    const reopened = spawn(executable, [], { env, stdio: 'ignore' }); children.push(reopened);
+    await expect.poll(async () => { try { return (await fetch('http://127.0.0.1:9229/json/version')).ok; } catch { return false; } }, { timeout: 25_000 }).toBe(true);
+    browser = await chromium.connectOverCDP('http://127.0.0.1:9229');
+    const restored = browser.contexts()[0].pages()[0];
+    await expect(restored.locator('#source')).toHaveValue('原窗口中的最新编辑');
+    await restored.locator('#history-tab').click();
+    await expect(restored.locator('.history-entry')).toHaveCount(1);
+    await restored.getByRole('button', { name: '关闭' }).click();
+    await expect.poll(() => reopened.exitCode, { timeout: 10_000 }).toBe(0);
+  } finally {
+    for (const child of children) if (child.exitCode === null) { const exited = once(child, 'exit'); child.kill(); await exited; }
+    await browser?.close().catch(() => {});
+  }
+});
 
 for (const session of ['first', 'reopened']) {
 test(`packaged WebView2 window, pin and cleanup (${session} session)`, async () => {
-  const child = spawn(resolve('src-tauri/target/release/key-relay.exe'), [], {
-    env: { ...process.env, WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: '--remote-debugging-port=9229' }, stdio: 'ignore',
+  const executable = resolve(process.env.KEY_RELAY_TEST_EXECUTABLE || 'src-tauri/target/release/key-relay.exe');
+  expect(statSync(executable).mtimeMs, '请先构建当前源码，桌面测试需要支持隔离配置目录的 EXE。').toBeGreaterThanOrEqual(statSync(resolve('src-tauri/src/lib.rs')).mtimeMs);
+  const child = spawn(executable, [], {
+    env: { ...process.env, KEY_RELAY_TEST_CONFIG_DIR: configDir, WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: '--remote-debugging-port=9229' }, stdio: 'ignore',
   });
   const errors: string[] = [];
   try {

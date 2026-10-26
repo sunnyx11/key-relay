@@ -1,17 +1,17 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import App from './App';
 import { getVersion } from '@tauri-apps/api/app';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import license from '../LICENSE?raw';
-import { bridge, defaults, updateBridge, type Snapshot, type UpdateSnapshot } from './bridge';
+import { bridge, defaults, updateBridge, archiveBridge, type TextState, type Snapshot, type UpdateSnapshot } from './bridge';
 
 vi.mock('@tauri-apps/api/app', () => ({ getVersion: vi.fn() }));
 vi.mock('@tauri-apps/plugin-opener', () => ({ openUrl: vi.fn() }));
 
 vi.mock('./bridge', async importOriginal => {
   const original = await importOriginal<typeof import('./bridge')>();
-  return { ...original, bridge: { snapshot: vi.fn(), sync: vi.fn(), start: vi.fn(), cancel: vi.fn(), save: vi.fn(), subscribe: vi.fn() }, updateBridge: { snapshot: vi.fn(), preference: vi.fn(), check: vi.fn(), download: vi.fn(), install: vi.fn(), subscribe: vi.fn() } };
+  return { ...original, archiveBridge: { read: vi.fn(), change: vi.fn(), flush: vi.fn(), subscribe: vi.fn() }, bridge: { snapshot: vi.fn(), sync: vi.fn(), start: vi.fn(), cancel: vi.fn(), save: vi.fn(), close: vi.fn(), subscribeClose: vi.fn(), subscribe: vi.fn() }, updateBridge: { snapshot: vi.fn(), preference: vi.fn(), check: vi.fn(), download: vi.fn(), install: vi.fn(), subscribe: vi.fn() } };
 });
 const pinWindow = vi.hoisted(() => ({ isAlwaysOnTop: vi.fn(), setAlwaysOnTop: vi.fn() }));
 const sizingWindow = vi.hoisted(() => ({ setSize: vi.fn(), isMaximized: vi.fn() }));
@@ -20,8 +20,17 @@ vi.mock('@tauri-apps/api/window', () => ({ getCurrentWindow: () => ({ ...pinWind
 const initial: Snapshot = { sequence: 1, phase: 'idle', sent: 0, total: 0, target: { x: -900, y: 240, title: '记事本' }, message: '', settings: defaults, shortcutError: null };
 let notify: (state: Snapshot) => void;
 let updateNotify: (state: UpdateSnapshot) => void;
+let archiveNotify: (state: TextState) => void;
+let closeNotify: () => void;
 const updateInitial: UpdateSnapshot = { sequence: 1, phase: 'idle', installed: true, autoCheck: true, version: null, notes: '', downloaded: 0, total: null, message: '' };
 beforeEach(() => {
+  closeNotify = () => {};
+  vi.mocked(bridge.close).mockResolvedValue();
+  vi.mocked(bridge.subscribeClose).mockImplementation(async handler => { closeNotify = handler; return () => {}; });
+  vi.mocked(archiveBridge.read).mockResolvedValue({ sequence: 1, draft: '', entries: [], restoreDraft: true, saveHistory: true, canUndo: false, error: null });
+  vi.mocked(archiveBridge.subscribe).mockImplementation(async handler => { archiveNotify = handler; return () => {}; });
+  vi.mocked(archiveBridge.change).mockResolvedValue({ sequence: 2, draft: '', entries: [], restoreDraft: true, saveHistory: true, canUndo: false, error: null });
+  vi.mocked(archiveBridge.flush).mockResolvedValue({ sequence: 3, draft: '', entries: [], restoreDraft: true, saveHistory: true, canUndo: false, error: null });
   vi.mocked(updateBridge.snapshot).mockResolvedValue(updateInitial);
   vi.mocked(updateBridge.subscribe).mockImplementation(async handler => { updateNotify = handler; return () => {}; });
   vi.mocked(updateBridge.check).mockResolvedValue({ ...updateInitial, sequence: 2, phase: 'available', version: '2.0.0', notes: '修复输入问题' });
@@ -48,6 +57,148 @@ async function mount() {
   await waitFor(() => expect(screen.getByRole('button', { name: '开始输入' })).toBeEnabled());
 }
 describe('editor and native task integration', () => {
+  it('restores a saved draft before initial synchronization and exposes the history tab', async () => {
+    const saved: TextState = { sequence: 1, draft: '上次\n  草稿😀', entries: [], restoreDraft: true, saveHistory: true, canUndo: false, error: null };
+    vi.mocked(archiveBridge.read).mockResolvedValue(saved);
+    await mount();
+    expect(screen.getByRole('textbox', { name: '待输入文本' })).toHaveValue(saved.draft);
+    expect(bridge.sync).toHaveBeenCalledWith(expect.objectContaining({ text: saved.draft }));
+    expect(screen.getAllByRole('tab').map(tab => tab.textContent)).toEqual(['输入', '历史', '设置', '关于']);
+  });
+  it('preserves failed draft loads until an explicit retry succeeds', async () => {
+    vi.mocked(archiveBridge.read).mockRejectedValueOnce('读取上次内容失败');
+    render(<App />);
+    await waitFor(() => expect(screen.getByText('读取上次内容失败')).toBeVisible());
+    expect(screen.getByRole('textbox', { name: '待输入文本' })).toHaveAttribute('readonly');
+    expect(bridge.sync).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: '重试读取' }));
+    await waitFor(() => expect(screen.getByRole('textbox', { name: '待输入文本' })).not.toHaveAttribute('readonly'));
+  });
+  it('exposes independent text preferences and protects history actions during a task', async () => {
+    await mount();
+    fireEvent.click(screen.getByRole('tab', { name: '设置' }));
+    fireEvent.click(screen.getByRole('checkbox', { name: '保存历史输入记录' }));
+    await waitFor(() => expect(archiveBridge.change).toHaveBeenCalledWith({ kind: 'preferences', restoreDraft: true, saveHistory: false }));
+    act(() => notify({ ...initial, sequence: 10, phase: 'typing' }));
+    expect(screen.getByRole('tab', { name: '历史' })).toBeDisabled();
+    expect(screen.getByRole('checkbox', { name: '保存历史输入记录' })).toBeDisabled();
+  });
+  it('retries save failures and rejects older archive notifications without replacing current edits', async () => {
+    await mount();
+    const source = screen.getByRole('textbox', { name: '待输入文本' });
+    fireEvent.input(source, { target: { value: '最新编辑' } });
+    const failed: TextState = { sequence: 20, draft: '旧快照', entries: [], restoreDraft: true, saveHistory: true, canUndo: false, error: '内容暂未保存，关闭后可能丢失。' };
+    act(() => archiveNotify(failed));
+    expect(source).toHaveValue('最新编辑');
+    expect(screen.getByRole('alert')).toHaveTextContent('内容暂未保存');
+    vi.mocked(archiveBridge.change).mockResolvedValueOnce({ ...failed, sequence: 21, error: null });
+    fireEvent.click(screen.getByRole('button', { name: '重试保存' }));
+    await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument());
+    act(() => archiveNotify(failed));
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(source).toHaveValue('最新编辑');
+  });
+  it('saves current edits when draft saving is enabled again', async () => {
+    const saved: TextState = { sequence: 1, draft: '已有副本', entries: [], restoreDraft: false, saveHistory: true, canUndo: false, error: null };
+    vi.mocked(archiveBridge.read).mockResolvedValue(saved);
+    vi.mocked(archiveBridge.change).mockResolvedValue({ ...saved, sequence: 2, restoreDraft: true });
+    await mount();
+    const source = screen.getByRole('textbox', { name: '待输入文本' });
+    expect(source).toHaveValue('');
+    fireEvent.input(source, { target: { value: '当前新编辑' } });
+    fireEvent.click(screen.getByRole('tab', { name: '设置' }));
+    fireEvent.click(screen.getByRole('checkbox', { name: '保存并恢复上次编辑内容' }));
+    await waitFor(() => expect(archiveBridge.change).toHaveBeenCalledWith({ kind: 'preferences', restoreDraft: true, saveHistory: true }));
+    await waitFor(() => expect(bridge.sync).toHaveBeenLastCalledWith(expect.objectContaining({ text: '当前新编辑' })));
+    fireEvent.click(screen.getByRole('tab', { name: '输入' }));
+    expect(source).toHaveValue('当前新编辑');
+  });
+  it('keeps the app and pending update when saving the latest text fails before installation', async () => {
+    await mount();
+    act(() => updateNotify({ ...updateInitial, sequence: 2, phase: 'ready', version: '2.0.0' }));
+    vi.mocked(archiveBridge.flush).mockRejectedValueOnce('内容暂未保存，关闭后可能丢失。');
+    fireEvent.click(screen.getByRole('tab', { name: '关于' }));
+    fireEvent.click(screen.getByRole('button', { name: '安装并重启' }));
+    fireEvent.click(screen.getByRole('button', { name: '确认安装并重启' }));
+    await waitFor(() => expect(within(screen.getByRole('tabpanel', { name: '关于' })).getByText('内容暂未保存，关闭后可能丢失。')).toBeVisible());
+    expect(updateBridge.install).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: '安装并重启' })).toBeEnabled();
+  });
+  it('waits for queued editor changes and text persistence before closing', async () => {
+    await mount();
+    let release!: () => void;
+    vi.mocked(bridge.sync).mockImplementationOnce(() => new Promise<void>(resolve => { release = resolve; }));
+    const source = screen.getByRole('textbox', { name: '待输入文本' });
+    fireEvent.input(source, { target: { value: '排队中的旧文本' } });
+    await waitFor(() => expect(release).toBeDefined());
+    fireEvent.input(source, { target: { value: '关闭前的最新文本' } });
+    act(() => closeNotify());
+    expect(bridge.close).not.toHaveBeenCalled();
+    await act(async () => release());
+    await waitFor(() => expect(bridge.close).toHaveBeenCalledOnce());
+    expect(bridge.sync).toHaveBeenLastCalledWith(expect.objectContaining({ text: '关闭前的最新文本' }));
+    expect(vi.mocked(bridge.sync).mock.invocationCallOrder.at(-1)).toBeLessThan(vi.mocked(archiveBridge.flush).mock.invocationCallOrder.at(-1)!);
+    expect(vi.mocked(archiveBridge.flush).mock.invocationCallOrder.at(-1)).toBeLessThan(vi.mocked(bridge.close).mock.invocationCallOrder.at(-1)!);
+  });
+  it('keeps editing available after close persistence fails and closes after retry', async () => {
+    await mount();
+    fireEvent.click(screen.getByRole('tab', { name: '设置' }));
+    vi.mocked(archiveBridge.flush).mockRejectedValueOnce('内容暂未保存，关闭后可能丢失。');
+    act(() => closeNotify());
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('内容暂未保存'));
+    expect(bridge.close).not.toHaveBeenCalled();
+    expect(document.getElementById('source')).not.toHaveAttribute('readonly');
+    act(() => closeNotify());
+    await waitFor(() => expect(bridge.close).toHaveBeenCalledOnce());
+  });
+  it('queues current edits even when enabling draft saving fails and then retries', async () => {
+    const saved: TextState = { sequence: 1, draft: '旧副本', entries: [], restoreDraft: false, saveHistory: true, canUndo: false, error: null };
+    vi.mocked(archiveBridge.read).mockResolvedValue(saved);
+    vi.mocked(archiveBridge.change).mockResolvedValueOnce({ ...saved, sequence: 2, restoreDraft: true, error: '内容暂未保存，关闭后可能丢失。' }).mockResolvedValueOnce({ ...saved, sequence: 3, draft: '当前编辑', restoreDraft: true });
+    await mount();
+    fireEvent.input(screen.getByRole('textbox', { name: '待输入文本' }), { target: { value: '当前编辑' } });
+    await waitFor(() => expect(bridge.sync).toHaveBeenLastCalledWith(expect.objectContaining({ text: '当前编辑' })));
+    const syncCount = vi.mocked(bridge.sync).mock.calls.length;
+    fireEvent.click(screen.getByRole('tab', { name: '设置' }));
+    fireEvent.click(screen.getByRole('checkbox', { name: '保存并恢复上次编辑内容' }));
+    await waitFor(() => expect(bridge.sync).toHaveBeenCalledTimes(syncCount + 1));
+    expect(bridge.sync).toHaveBeenLastCalledWith(expect.objectContaining({ text: '当前编辑' }));
+    await waitFor(() => expect(screen.getByRole('button', { name: '重试保存' })).toBeEnabled());
+    fireEvent.click(screen.getByRole('button', { name: '重试保存' }));
+    await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument());
+  });
+  it('keeps the editor locked when an earlier start finishes during close persistence', async () => {
+    await mount();
+    fireEvent.input(screen.getByRole('textbox', { name: '待输入文本' }), { target: { value: '即将退出' } });
+    let finishStart!: (state: Snapshot) => void;
+    let finishFlush!: (state: TextState) => void;
+    vi.mocked(bridge.start).mockImplementationOnce(() => new Promise(resolve => { finishStart = resolve; }));
+    vi.mocked(archiveBridge.flush).mockImplementationOnce(() => new Promise(resolve => { finishFlush = resolve; }));
+    fireEvent.click(screen.getByRole('button', { name: '开始输入' }));
+    await waitFor(() => expect(finishStart).toBeDefined());
+    act(() => closeNotify());
+    await act(async () => finishStart({ ...initial, sequence: 30, phase: 'stopped' }));
+    await waitFor(() => expect(finishFlush).toBeDefined());
+    expect(screen.getByRole('textbox', { name: '待输入文本' })).toHaveAttribute('readonly');
+    expect(screen.getByRole('button', { name: '开始输入' })).toBeDisabled();
+    await act(async () => finishFlush({ sequence: 30, draft: '即将退出', restoreDraft: true, saveHistory: true, entries: [], canUndo: false, error: null }));
+    await waitFor(() => expect(bridge.close).toHaveBeenCalledOnce());
+  });
+  it('submits current edits after an enabling request times out with a late native result', async () => {
+    const saved: TextState = { sequence: 1, draft: '旧副本', entries: [], restoreDraft: false, saveHistory: true, canUndo: false, error: null };
+    vi.mocked(archiveBridge.read).mockResolvedValue(saved);
+    vi.mocked(archiveBridge.change).mockRejectedValueOnce('任务响应超时');
+    await mount();
+    fireEvent.input(screen.getByRole('textbox', { name: '待输入文本' }), { target: { value: '当前编辑' } });
+    await waitFor(() => expect(bridge.sync).toHaveBeenLastCalledWith(expect.objectContaining({ text: '当前编辑' })));
+    const syncCount = vi.mocked(bridge.sync).mock.calls.length;
+    fireEvent.click(screen.getByRole('tab', { name: '设置' }));
+    fireEvent.click(screen.getByRole('checkbox', { name: '保存并恢复上次编辑内容' }));
+    await waitFor(() => expect(bridge.sync).toHaveBeenCalledTimes(syncCount + 1));
+    expect(bridge.sync).toHaveBeenLastCalledWith(expect.objectContaining({ text: '当前编辑' }));
+    act(() => archiveNotify({ ...saved, sequence: 2, restoreDraft: true }));
+    expect(screen.getByRole('checkbox', { name: '保存并恢复上次编辑内容' })).toBeChecked();
+  });
   it('requires an external input position and removes the countdown setting', async () => {
     vi.mocked(bridge.snapshot).mockResolvedValue({ ...initial, target: null });
     render(<App />);
@@ -79,7 +230,7 @@ describe('editor and native task integration', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: '安装并重启' })).toBeEnabled());
     expect(updateBridge.install).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole('button', { name: '安装并重启' }));
-    expect(screen.getByText('重启后将清除编辑框中的全部文本，请先保存需要保留的内容。')).toBeVisible();
+    expect(screen.getByText('安装前将保存当前草稿，重启后自动恢复。外部输入位置需要重新选择。')).toBeVisible();
     fireEvent.click(screen.getByRole('button', { name: '暂不安装' }));
     expect(updateBridge.install).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole('button', { name: '安装并重启' }));
@@ -177,12 +328,14 @@ describe('editor and native task integration', () => {
     fireEvent.click(screen.getByRole('link', { name: 'hkhl888@foxmail.com' }));
     await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument());
   });
-  it('navigates three tabs and returns from about when a native task starts', async () => {
+  it('navigates four tabs and returns from about when a native task starts', async () => {
     await mount();
     const input = screen.getByRole('tab', { name: '输入' });
+    const history = screen.getByRole('tab', { name: '历史' });
     const settings = screen.getByRole('tab', { name: '设置' });
     const about = screen.getByRole('tab', { name: '关于' });
-    fireEvent.keyDown(input, { key: 'ArrowRight' }); expect(settings).toHaveFocus();
+    fireEvent.keyDown(input, { key: 'ArrowRight' }); expect(history).toHaveFocus();
+    fireEvent.keyDown(history, { key: 'ArrowRight' }); expect(settings).toHaveFocus();
     fireEvent.keyDown(settings, { key: 'ArrowRight' }); expect(about).toHaveFocus();
     fireEvent.keyDown(about, { key: 'ArrowRight' }); expect(input).toHaveFocus();
     fireEvent.keyDown(input, { key: 'ArrowLeft' }); expect(about).toHaveFocus();

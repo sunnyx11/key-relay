@@ -14,7 +14,7 @@ const links = [
 ];
 
 /** Show application metadata, system-handled support links and the bundled MIT license. */
-export function AboutPanel({ hidden, updates, beforeInstall }: { hidden: boolean; updates: ReturnType<typeof useUpdates>; beforeInstall: () => Promise<void> }) {
+export function AboutPanel({ hidden, updates, beforeInstall, restoreDraft }: { hidden: boolean; updates: ReturnType<typeof useUpdates>; beforeInstall: () => Promise<void>; restoreDraft: boolean }) {
   const [version, setVersion] = useState('');
   const [versionError, setVersionError] = useState(false);
   const [versionAttempt, setVersionAttempt] = useState(0);
@@ -57,7 +57,7 @@ export function AboutPanel({ hidden, updates, beforeInstall }: { hidden: boolean
         </div>
         {versionError && <div className="about-version-error"><p role="alert">读取版本失败，请重试。</p><button className="button" onClick={() => { setVersionError(false); setVersionAttempt(value => value + 1); }}>重试读取版本</button></div>}
         <p className="about-description">将准备好的文本作为键盘输入发送到目标位置，适用于限制剪贴板粘贴的远程桌面会话。</p>
-        <UpdatePanel updates={updates} hidden={hidden} beforeInstall={beforeInstall} open={open} />
+        <UpdatePanel updates={updates} hidden={hidden} beforeInstall={beforeInstall} restoreDraft={restoreDraft} open={open} />
         <div className="about-support">
           <nav aria-label="项目支持">{links.map(link => <a key={link.url} href={link.url} onClick={event => { void open(event); }}>{link.label}</a>)}</nav>
           <p className="about-contact"><span>联系邮箱</span><a href="mailto:hkhl888@foxmail.com" onClick={event => { void open(event); }}>hkhl888@foxmail.com</a></p>

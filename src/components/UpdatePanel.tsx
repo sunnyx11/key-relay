@@ -3,8 +3,8 @@ import { flushSync } from 'react-dom';
 import type { useUpdates } from '../useUpdates';
 
 /** Display explicit download and install actions without taking focus on discovery. */
-export function UpdatePanel({ updates, hidden, beforeInstall, open }: {
-  updates: ReturnType<typeof useUpdates>; hidden: boolean; beforeInstall: () => Promise<void>;
+export function UpdatePanel({ updates, hidden, beforeInstall, restoreDraft, open }: {
+  updates: ReturnType<typeof useUpdates>; hidden: boolean; beforeInstall: () => Promise<void>; restoreDraft: boolean;
   open: (event: MouseEvent<HTMLAnchorElement>) => Promise<void>;
 }) {
   const { snapshot, pending, ready, error } = updates;
@@ -33,7 +33,7 @@ export function UpdatePanel({ updates, hidden, beforeInstall, open }: {
     {!snapshot.installed && <p className="update-hint">独立 EXE 需退出后手动替换。<a href="https://github.com/sunnyx11/key-relay/releases/latest" onClick={event => { void open(event); }}>前往下载</a></p>}
     {snapshot.installed && snapshot.phase === 'available' && <button className="button primary" disabled={waiting} onClick={() => { void updates.download(); }}>下载更新</button>}
     {snapshot.installed && snapshot.phase === 'ready' && (confirming ? <div className="update-confirmation">
-      <p>重启后将清除编辑框中的全部文本，请先保存需要保留的内容。</p>
+      <p>{restoreDraft ? '安装前将保存当前草稿，重启后自动恢复。外部输入位置需要重新选择。' : '草稿保存已关闭，本次未保存的编辑内容将在重启后清除。请先保存需要保留的内容。'}</p>
       <div className="update-actions"><button className="button" ref={cancelButton} disabled={waiting} onClick={() => confirm(false)}>暂不安装</button><button className="button primary" disabled={waiting} onClick={() => { setConfirming(false); void updates.install(beforeInstall); }}>确认安装并重启</button></div>
     </div> : <button className="button primary" ref={installButton} disabled={waiting} onClick={() => confirm(true)}>安装并重启</button>)}
   </section>;

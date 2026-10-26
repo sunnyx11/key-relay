@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { flushSync } from 'react-dom';
 import { getCurrentWindow, LogicalSize } from '@tauri-apps/api/window';
 import { useRelay } from './useRelay';
@@ -8,25 +8,40 @@ import { InputPanel } from './components/InputPanel';
 import { SettingsPanel } from './components/SettingsPanel';
 import { AboutPanel } from './components/AboutPanel';
 import { TaskFooter } from './components/TaskFooter';
+import { HistoryPanel } from './components/HistoryPanel';
+import { TextSettings } from './components/TextSettings';
+import type { HistoryEntry } from './bridge';
 
-const tabs = [{ name: 'input', label: '输入' }, { name: 'settings', label: '设置' }, { name: 'about', label: '关于' }] as const;
+const tabs = [{ name: 'input', label: '输入' }, { name: 'history', label: '历史' }, { name: 'settings', label: '设置' }, { name: 'about', label: '关于' }] as const;
 
 /** Compose the local editor window; native commands retain authoritative task state. */
 export default function App() {
   const relay = useRelay();
+  const setNotice = relay.setNotice;
   const updates = useUpdates();
   const installing = updates.snapshot.phase === 'installing';
-  const [tab, setTab] = useState<'input' | 'settings' | 'about'>('input');
+  const [tab, setTab] = useState<'input' | 'history' | 'settings' | 'about'>('input');
+  const [restoredSequence, setRestoredSequence] = useState<number | null>(null);
   const sourceRef = useRef<HTMLTextAreaElement>(null);
   const containerRef = useRef<HTMLElement>(null);
   const active = ['targeting', 'typing'].includes(relay.snapshot.phase);
   const busy = active || !!relay.snapshot.interactionBlocked || installing;
   const editingDisabled = busy || relay.pending || !relay.ready;
+  const historyDisabled = editingDisabled || relay.archivePending;
   const report = (error: unknown) => relay.setNotice({ text: String(error), error: true });
-  const tabDisabled = (name: typeof tab) => installing || (name === 'about' ? busy || relay.pending || !relay.ready : name === 'settings' && relay.snapshot.phase === 'targeting');
+  const tabDisabled = (name: typeof tab) => installing || (name === 'history' ? historyDisabled : name === 'about' ? busy || relay.pending || !relay.ready : name === 'settings' && relay.snapshot.phase === 'targeting');
+
+  useLayoutEffect(() => {
+    if (relay.restoredText !== null && sourceRef.current) sourceRef.current.value = relay.restoredText;
+  }, [relay.restoredText]);
+  useEffect(() => {
+    if (relay.notice?.text !== '已恢复历史内容 · Ctrl+Z 可撤销') return;
+    const timer = window.setTimeout(() => setNotice(current => current?.text === '已恢复历史内容 · Ctrl+Z 可撤销' ? null : current), 3000);
+    return () => window.clearTimeout(timer);
+  }, [relay.notice, setNotice]);
 
   useEffect(() => {
-    if (active) setTab(current => current === 'about' ? 'input' : current);
+    if (active) setTab(current => current === 'about' || current === 'history' ? 'input' : current);
   }, [active]);
 
   useEffect(() => {
@@ -112,6 +127,24 @@ export default function App() {
     if (!document.execCommand('delete')) { report('清空未完成，可在编辑框中全选并按 Delete。'); return; }
     relay.updateText(source.value); relay.setNotice({ text: '已清空，按 Ctrl+Z 撤销。', error: false });
   };
+  const restoreHistory = (entry: HistoryEntry) => {
+    if (historyDisabled) return;
+    flushSync(() => setTab('input'));
+    const source = sourceRef.current!;
+    source.focus();
+    if (source.value !== entry.text) {
+      source.select();
+      if (!document.execCommand('insertText', false, entry.text)) {
+        relay.updateText(source.value);
+        report('恢复未完成，请重试。');
+        return;
+      }
+    }
+    source.setSelectionRange(source.value.length, source.value.length);
+    relay.updateText(source.value);
+    setRestoredSequence(relay.snapshot.sequence);
+    relay.setNotice({ text: '已恢复历史内容 · Ctrl+Z 可撤销', error: false });
+  };
   const tabKey = (event: KeyboardEvent<HTMLButtonElement>) => {
     if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
     event.preventDefault();
@@ -122,14 +155,22 @@ export default function App() {
   };
   return <main className="window" ref={containerRef}>
     <TitleBar disabled={busy || relay.pending || !relay.ready} onError={report} />
+    {relay.closeError && <div className="storage-notice" role="alert">{relay.closeError} 请再次关闭窗口以重试。</div>}
+    {(!relay.ready || relay.archive.error) && <div className="storage-notice" role={relay.loadError || relay.archive.error ? 'alert' : 'status'}>
+      <span>{relay.loadError || relay.archive.error || '正在恢复上次内容…'}</span>
+      {relay.loadError ? <button className="button" onClick={relay.retryLoad}>重试读取</button> : relay.archive.error && <button className="button" disabled={historyDisabled} onClick={() => { void relay.changeArchive({ kind: 'retry' }); }}>重试保存</button>}
+    </div>}
     <div className="workspace">
       <nav className="tabs" role="tablist" aria-label="功能页签">
         {tabs.map(({ name, label }) => <button key={name} id={`${name}-tab`} className="tab" role="tab" aria-selected={tab === name} aria-controls={`${name}-panel`} tabIndex={tab === name ? 0 : -1} disabled={tabDisabled(name)} onClick={() => setTab(name)} onKeyDown={tabKey}>{label}{name === 'about' && ['available', 'ready'].includes(updates.snapshot.phase) && <span className="update-indicator" title="有新版本" aria-hidden="true" />}</button>)}
       </nav>
       <InputPanel hidden={tab !== 'input'} busy={editingDisabled} sourceRef={sourceRef} onInput={relay.updateText} />
-      <SettingsPanel hidden={tab !== 'settings'} busy={busy || !relay.ready} settings={relay.settings} shortcutError={relay.snapshot.shortcutError} onChange={relay.updateSettings} />
-      <AboutPanel hidden={tab !== 'about'} updates={updates} beforeInstall={relay.flushSettings} />
-      <TaskFooter hidden={tab !== 'input'} text={relay.text} snapshot={relay.snapshot} ready={relay.ready && !relay.snapshot.interactionBlocked && !installing} pending={relay.pending} notice={relay.notice} onStart={start} onTrimTrailing={trimTrailing} onClear={clear} />
+      <HistoryPanel hidden={tab !== 'history'} busy={historyDisabled} archive={relay.archive} onRestore={restoreHistory} onChange={relay.changeArchive} />
+      <SettingsPanel hidden={tab !== 'settings'} busy={busy || relay.pending || !relay.ready} settings={relay.settings} shortcutError={relay.snapshot.shortcutError} onChange={relay.updateSettings}>
+        <TextSettings archive={relay.archive} busy={historyDisabled} onChange={relay.changeArchive} />
+      </SettingsPanel>
+      <AboutPanel hidden={tab !== 'about'} updates={updates} beforeInstall={relay.flushSettings} restoreDraft={relay.archive.restoreDraft} />
+      <TaskFooter hidden={tab !== 'input'} text={relay.text} snapshot={restoredSequence === relay.snapshot.sequence ? { ...relay.snapshot, message: '' } : relay.snapshot} ready={relay.ready && !relay.snapshot.interactionBlocked && !installing} pending={relay.pending} notice={relay.notice} onStart={start} onTrimTrailing={trimTrailing} onClear={clear} />
     </div>
   </main>;
 }

@@ -57,7 +57,7 @@ npm.cmd run tauri -- build --no-bundle -- --locked
 | 附件 | 用途 |
 | --- | --- |
 | `key-relay_<版本>_x64-setup.exe` | 当前用户 NSIS 安装程序 |
-| `key-relay.exe` | 免安装启动，使用系统 WebView2；有效设置仍保存在用户配置目录 |
+| `key-relay.exe` | 免安装启动，使用系统 WebView2；与安装版共用 `%USERPROFILE%\.key-relay\` 数据及单实例 |
 | `key-relay_<版本>_x64-setup.exe.sig` | Tauri 更新签名，内容与安装包对应 |
 | `latest.json` | 版本、说明、构建时刻及 Windows x64 的安装包 URL 和完整签名 |
 | `SHA256SUMS.txt` | 其余四个附件的 SHA-256，格式为十六进制值、两个空格、文件名 |
@@ -215,7 +215,8 @@ Get-FileHash 'src-tauri/target/release-assets/v0.2.0/key-relay_0.2.0_x64-setup.e
 ## 草稿检查与公开
 
 - 确认四个 Actions 任务均成功，五个附件齐全，校验值正确。
-- 使用隔离 Windows 环境完成 A→B 签名升级，验证重启、设置保留和编辑文本清除；安装启动失败时验证快捷键和任务能力恢复。
+- 使用隔离 Windows 环境完成 A→B 签名升级，验证重启并从 `%USERPROFILE%\.key-relay\` 读取数据。该目录已有数据时，设置及历史保留，草稿按开关恢复；目录缺少文件时采用默认值和空数据，原应用配置目录文件保留原处。安装启动失败时验证快捷键和任务能力恢复。
+- 重复运行安装版或独立 EXE，确认第二进程退出，已有主窗口还原、显示并请求焦点，编辑内容、页签与置顶状态保留。
 - 公开后核对最新正式版本端点返回清单，旧版仅提示版本，确认后才下载。
 - 确认标签、软件关于页和安装包版本一致。
 - 检查更新说明中的功能、兼容性和已知限制。

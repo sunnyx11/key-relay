@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { bridge, defaults, type Draft, type DraftSettings, type Settings, type Snapshot } from './bridge';
+import { archiveBridge, bridge, defaults, type Draft, type DraftSettings, type Settings, type Snapshot, type TextAction, type TextState } from './bridge';
 
 const initial: Snapshot = { sequence: 0, phase: 'idle', sent: 0, total: 0, target: null, message: '', settings: defaults, shortcutError: null };
 
@@ -9,12 +9,27 @@ export function useRelay() {
   const [settings, setSettings] = useState<DraftSettings>(defaults);
   const [text, setText] = useState('');
   const [ready, setReady] = useState(false);
+  const [archive, setArchive] = useState<TextState>({ sequence: 0, draft: '', entries: [], restoreDraft: true, saveHistory: true, canUndo: false, error: null });
+  const [restoredText, setRestoredText] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState('');
+  const [attempt, setAttempt] = useState(0);
+  const [archivePending, setArchivePending] = useState(false);
+  const archiveSequence = useRef(-1);
+  const archiveLock = useRef(false);
+  const acceptArchive = useCallback((state: TextState) => {
+    if (!alive.current || state.sequence <= archiveSequence.current) return;
+    archiveSequence.current = state.sequence;
+    setArchive(state);
+  }, []);
   const [pending, setPending] = useState(false);
+  const [closePending, setClosePending] = useState(false);
+  const [closeError, setCloseError] = useState('');
   const [notice, setNotice] = useState<{ text: string; error: boolean } | null>(null);
   const sequence = useRef(-1);
   const revision = useRef(Date.now());
   const draft = useRef<Draft>({ revision: revision.current, text: '', settings: defaults });
   const queue = useRef(Promise.resolve());
+  const closing = useRef(false);
   const validSettings = useRef<Settings>(defaults);
   const alive = useRef(true);
   const report = useCallback((error: unknown) => { if (alive.current) setNotice({ text: String(error), error: true }); }, []);
@@ -29,25 +44,51 @@ export function useRelay() {
     return next;
   }, [report]);
 
+  const close = useCallback(async () => {
+    if (closing.current) return;
+    closing.current = true; setClosePending(true); setCloseError('');
+    try {
+      await bridge.cancel();
+      await enqueue(async () => {
+        await bridge.sync({ ...draft.current, revision: ++revision.current });
+        accept(await bridge.save(validSettings.current));
+        acceptArchive(await archiveBridge.flush());
+        await bridge.close();
+      });
+    } catch (error) {
+      report(error); closing.current = false;
+      if (alive.current) { setClosePending(false); setCloseError(String(error)); }
+    }
+  }, [accept, acceptArchive, enqueue, report]);
+
   useEffect(() => {
     alive.current = true;
     let disposed = false;
-    let unsubscribe: (() => void) | undefined;
+    const cleanups: (() => void)[] = [];
+    setLoadError('');
     void (async () => {
       try {
         const cleanup = await bridge.subscribe(accept);
         if (disposed) { cleanup(); return; }
-        unsubscribe = cleanup;
-        const state = await bridge.snapshot();
+        cleanups.push(cleanup);
+        const textCleanup = await archiveBridge.subscribe(acceptArchive);
+        if (disposed) { textCleanup(); return; }
+        cleanups.push(textCleanup);
+        const closeCleanup = await bridge.subscribeClose(() => { void close(); });
+        if (disposed) { closeCleanup(); return; }
+        cleanups.push(closeCleanup);
+        const [state, saved] = await Promise.all([bridge.snapshot(), archiveBridge.read()]);
         if (disposed) return;
-        accept(state); setSettings(state.settings); validSettings.current = state.settings;
-        draft.current = { revision: ++revision.current, text: '', settings: state.settings };
+        accept(state); acceptArchive(saved); setSettings(state.settings); validSettings.current = state.settings;
+        const value = saved.restoreDraft ? saved.draft : '';
+        setText(value); setRestoredText(value);
+        draft.current = { revision: ++revision.current, text: value, settings: state.settings };
         await bridge.sync(draft.current);
         if (!disposed) setReady(true);
-      } catch (error) { if (!disposed) report(error); }
+      } catch (error) { if (!disposed) setLoadError(String(error)); }
     })();
-    return () => { disposed = true; alive.current = false; unsubscribe?.(); };
-  }, [accept, report]);
+    return () => { disposed = true; alive.current = false; cleanups.forEach(cleanup => cleanup()); };
+  }, [accept, acceptArchive, attempt, close]);
 
   const sync = (nextText: string, nextSettings: DraftSettings) => {
     draft.current = { revision: ++revision.current, text: nextText, settings: nextSettings };
@@ -76,6 +117,29 @@ export function useRelay() {
   const cancel = async () => {
     try { accept(await bridge.cancel()); } catch (error) { report(error); }
   };
-  const flushSettings = () => enqueue(async () => { accept(await bridge.save(validSettings.current)); });
-  return { snapshot, settings, text, ready, pending, notice, setNotice, updateText, updateSettings, start, cancel, flushSettings };
+  const changeArchive = async (action: TextAction) => {
+    if (archiveLock.current) return false;
+    archiveLock.current = true; setArchivePending(true);
+    try {
+      await enqueue(async () => {
+        const state = await archiveBridge.change(action).finally(async () => {
+          if (action.kind === 'preferences' && action.restoreDraft) {
+            draft.current = { ...draft.current, revision: ++revision.current };
+            await bridge.sync(draft.current);
+          }
+        });
+        acceptArchive(state);
+        if (state.error) throw new Error(state.error);
+      });
+      return true;
+    } catch { return false; }
+    finally { archiveLock.current = false; if (alive.current) setArchivePending(false); }
+  };
+  const flushSettings = () => enqueue(async () => {
+    await bridge.sync({ ...draft.current, revision: ++revision.current });
+    accept(await bridge.save(validSettings.current));
+    acceptArchive(await archiveBridge.flush());
+  });
+  const retryLoad = () => setAttempt(value => value + 1);
+  return { snapshot, settings, text, ready, pending: pending || closePending, closeError, notice, setNotice, updateText, updateSettings, start, cancel, flushSettings, archive, restoredText, loadError, retryLoad, archivePending, changeArchive };
 }

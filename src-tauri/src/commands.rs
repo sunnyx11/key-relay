@@ -1,4 +1,5 @@
 use crate::{
+    archive::{Archive, TextAction, TextState},
     settings::Settings,
     shortcut,
     task::{Draft, Engine, Phase, Snapshot},
@@ -21,7 +22,7 @@ use std::{
 use tauri::{AppHandle, Emitter, State};
 use tauri_plugin_global_shortcut::GlobalShortcutExt;
 
-type Reply = Sender<Result<Snapshot, String>>;
+type Reply<T = Snapshot> = Sender<Result<T, String>>;
 /// Worker messages serialize all task mutations and persistence.
 pub enum Message {
     Snapshot(Reply),
@@ -29,6 +30,9 @@ pub enum Message {
     Start(Draft, Reply),
     Cancel(Reply),
     Save(Settings, Reply),
+    TextRead(Reply<TextState>),
+    TextAction(TextAction, Reply<TextState>),
+    TextFlush(Reply<TextState>),
     Shortcut { cycle: u64, key: u32 },
     Hook(HookEvent),
     Shutdown(Reply),
@@ -39,10 +43,11 @@ pub enum Message {
 pub struct Runtime {
     pub sender: Sender<Message>,
     pub closing: AtomicBool,
+    pub editor_ready: AtomicBool,
 }
 impl Runtime {
     /// Spawn the single task owner without blocking the Tauri event loop.
-    pub fn spawn(app: AppHandle, path: PathBuf) -> Self {
+    pub fn spawn(app: AppHandle, path: PathBuf, archive: Archive) -> Self {
         let (sender, receiver) = mpsc::channel();
         let hook_sender = sender.clone();
         thread::spawn(move || {
@@ -83,10 +88,12 @@ impl Runtime {
                         let _ = reply.send(Ok(engine.snapshot.clone()));
                     }
                     Ok(Message::Sync(draft, reply)) => {
+                        archive.draft(draft.revision, draft.text.clone());
                         engine.sync(draft);
                         let _ = reply.send(Ok(engine.snapshot.clone()));
                     }
                     Ok(Message::Start(draft, reply)) => {
+                        archive.draft(draft.revision, draft.text.clone());
                         engine.sync(draft);
                         let result = if let Some(error) = &hook_error {
                             Err(error.clone())
@@ -120,6 +127,21 @@ impl Runtime {
                         }
                         let _ = reply.send(result.map(|_| engine.snapshot.clone()));
                     }
+                    Ok(Message::TextRead(reply)) => {
+                        let _ = reply.send(archive.read());
+                    }
+                    Ok(Message::TextAction(action, reply)) => {
+                        let result =
+                            if updating || engine.busy() || engine.snapshot.interaction_blocked {
+                                Err("任务结束后可修改保存内容。".into())
+                            } else {
+                                archive.action(action)
+                            };
+                        let _ = reply.send(result);
+                    }
+                    Ok(Message::TextFlush(reply)) => {
+                        let _ = reply.send(archive.flush());
+                    }
                     Ok(Message::Shortcut { cycle, key }) => {
                         if !updating && hook_error.is_none() {
                             let was_busy = engine.busy();
@@ -147,7 +169,7 @@ impl Runtime {
                     }
                     Ok(Message::Hook(HookEvent::MouseUp)) => {}
                     Ok(Message::PrepareUpdate(reply)) => {
-                        if let Err(error) = engine.prepare_update() {
+                        if let Err(error) = archive.flush().and_then(|_| engine.prepare_update()) {
                             let _ = reply.send(Err(error));
                         } else {
                             updating = true;
@@ -188,15 +210,19 @@ impl Runtime {
                     Ok(Message::Shutdown(reply)) => {
                         engine.cancel("软件退出，任务已结束");
                         signals.phase.store(0, Ordering::SeqCst);
-                        if let Ok(hooks) = &mut hooks {
-                            hooks.stop();
+                        if let Err(error) = archive.flush() {
+                            engine.snapshot.phase = Phase::Failed;
+                            engine.snapshot.message = error.clone();
+                            engine.snapshot.sequence += 1;
+                            let _ = reply.send(Err(error));
+                        } else {
+                            if let Ok(hooks) = &mut hooks {
+                                hooks.stop();
+                            }
+                            let _ = app.global_shortcut().unregister_all();
+                            let _ = reply.send(Ok(engine.snapshot.clone()));
+                            break;
                         }
-                        let result = app
-                            .global_shortcut()
-                            .unregister_all()
-                            .map_err(|_| "快捷键释放失败。".to_string());
-                        let _ = reply.send(result.map(|_| engine.snapshot.clone()));
-                        break;
                     }
                     Err(mpsc::RecvTimeoutError::Disconnected) => break,
                     Err(mpsc::RecvTimeoutError::Timeout) => {}
@@ -252,6 +278,9 @@ impl Runtime {
                         } else if let Some(error) = target_error {
                             engine.target_failed(error);
                         } else if before == Phase::Typing || !input::any_held(engine.startup_key) {
+                            if let Some(text) = engine.take_history_text() {
+                                archive.record(text);
+                            }
                             engine
                                 .submitted(origin.elapsed().as_millis() as u64, input::send(unit));
                         } else {
@@ -279,6 +308,7 @@ impl Runtime {
         Self {
             sender,
             closing: AtomicBool::new(false),
+            editor_ready: AtomicBool::new(false),
         }
     }
     /// Ask the worker to stop and release native resources before application exit.
@@ -288,14 +318,26 @@ impl Runtime {
         }
         let sender = self.sender.clone();
         thread::spawn(move || {
-            let (tx, rx) = mpsc::channel();
-            if sender.send(Message::Shutdown(tx)).is_ok() {
-                let _ = rx.recv_timeout(Duration::from_secs(5));
+            if shutdown_worker(sender).is_ok() {
+                app.exit(0);
+            } else {
+                use tauri::Manager;
+                app.state::<Runtime>()
+                    .closing
+                    .store(false, Ordering::SeqCst);
             }
-            app.exit(0);
         });
     }
 }
+fn shutdown_worker(sender: Sender<Message>) -> Result<(), String> {
+    let (tx, rx) = mpsc::channel();
+    sender
+        .send(Message::Shutdown(tx))
+        .map_err(|_| "任务线程已停止。".to_string())?;
+    rx.recv().map_err(|_| "退出请求执行失败。".to_string())??;
+    Ok(())
+}
+
 fn start_hooks(signals: Arc<Signals>, sender: Sender<Message>) -> Result<Hooks, String> {
     target::use_physical_coordinates()?;
     Hooks::start(signals, move |event| {
@@ -328,10 +370,10 @@ fn publish_phase(signals: &Signals, phase: Phase) {
         signals.stop.store(false, Ordering::SeqCst);
     }
 }
-async fn request(
+async fn request<T: Send + 'static>(
     sender: Sender<Message>,
-    build: impl FnOnce(Reply) -> Message + Send + 'static,
-) -> Result<Snapshot, String> {
+    build: impl FnOnce(Reply<T>) -> Message + Send + 'static,
+) -> Result<T, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let (tx, rx) = mpsc::channel();
         sender
@@ -348,13 +390,32 @@ async fn request(
 pub async fn get_snapshot(runtime: State<'_, Runtime>) -> Result<Snapshot, String> {
     request(runtime.sender.clone(), Message::Snapshot).await
 }
-/// Synchronize an editor revision in memory; source text is never persisted.
+/// Synchronize the editor and enqueue its latest text for local draft persistence.
 #[tauri::command]
 pub async fn sync_draft(runtime: State<'_, Runtime>, draft: Draft) -> Result<(), String> {
-    request(runtime.sender.clone(), |reply| Message::Sync(draft, reply))
-        .await
-        .map(|_| ())
+    request(runtime.sender.clone(), |reply| Message::Sync(draft, reply)).await?;
+    runtime.editor_ready.store(true, Ordering::SeqCst);
+    Ok(())
 }
+/// Complete a frontend-coordinated close after its editor queue has drained.
+#[tauri::command]
+pub async fn close_app(app: AppHandle, runtime: State<'_, Runtime>) -> Result<(), String> {
+    if runtime.closing.swap(true, Ordering::SeqCst) {
+        return Err("程序正在退出。".into());
+    }
+    let sender = runtime.sender.clone();
+    let result = tauri::async_runtime::spawn_blocking(move || shutdown_worker(sender))
+        .await
+        .map_err(|_| "退出请求执行失败。".to_string())
+        .and_then(|result| result);
+    if result.is_ok() {
+        app.exit(0);
+    } else {
+        runtime.closing.store(false, Ordering::SeqCst);
+    }
+    result
+}
+
 /// Freeze the submitted editor state and activate the recorded target.
 #[tauri::command]
 pub async fn start_task(runtime: State<'_, Runtime>, draft: Draft) -> Result<Snapshot, String> {
@@ -375,6 +436,28 @@ pub async fn save_settings(
         Message::Save(settings, reply)
     })
     .await
+}
+
+/// Read saved text and preferences; failed reads preserve the original file.
+#[tauri::command]
+pub async fn get_text_state(runtime: State<'_, Runtime>) -> Result<TextState, String> {
+    request(runtime.sender.clone(), Message::TextRead).await
+}
+/// Apply archive preferences or history mutations while the task owner is idle.
+#[tauri::command]
+pub async fn change_text_state(
+    runtime: State<'_, Runtime>,
+    action: TextAction,
+) -> Result<TextState, String> {
+    request(runtime.sender.clone(), |reply| {
+        Message::TextAction(action, reply)
+    })
+    .await
+}
+/// Wait for queued text writes before installation or an explicit save retry.
+#[tauri::command]
+pub async fn flush_text(runtime: State<'_, Runtime>) -> Result<TextState, String> {
+    request(runtime.sender.clone(), Message::TextFlush).await
 }
 
 #[cfg(test)]
