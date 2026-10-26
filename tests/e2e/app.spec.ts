@@ -231,6 +231,7 @@ test('a full pinned archive keeps capacity guidance visible during a task at min
 });
 
 test('history rows and text preferences fit narrow widths and zoom without changing editor height', async ({ page }) => {
+  test.setTimeout(60_000);
   await openApp(page, { entries: Array.from({ length: 100 }, (_, index) => ({ pinned: false, id: 100 - index, time: Date.now() - index * 86400000, text: `  记录 ${index}\n第二行😀\n第三行` })) });
   for (const width of [600, 320]) for (const zoom of [1, 1.5]) {
     await page.setViewportSize({ width, height: 1100 });
@@ -253,9 +254,9 @@ test('history rows and text preferences fit narrow widths and zoom without chang
     const button = page.getByRole('button', { name: '清空历史', exact: true });
     expect(await button.evaluate(el => [getComputedStyle(el).height, getComputedStyle(el).borderRadius])).toEqual(['26px', '0px']);
     const clearRight = (await button.boundingBox())!;
+    const toolbar = (await page.locator('.history-toolbar').boundingBox())!;
+    expect(Math.abs(toolbar.x + toolbar.width - clearRight.x - clearRight.width - 2 * zoom), `${width}px/${zoom}: clear history at toolbar right edge`).toBeLessThanOrEqual(1);
     const deleteButton = page.locator('.history-entry').first().getByRole('button', { name: /^删除记录/ });
-    const deleteRight = (await deleteButton.boundingBox())!;
-    expect(Math.abs(clearRight.x + clearRight.width - deleteRight.x - deleteRight.width), `${width}px/${zoom}: history action right edges`).toBeLessThanOrEqual(1);
     const restore = page.locator('.history-entry').first().getByRole('button', { name: /^恢复记录/ });
     await expect(restore).toHaveAttribute('title', '恢复记录');
     await expect(deleteButton).toHaveAttribute('title', '删除记录');
@@ -265,7 +266,42 @@ test('history rows and text preferences fit narrow widths and zoom without chang
     await expect(page.getByLabel('历史记录全文')).toContainText('第三行');
     expect(await page.getByLabel('历史记录全文').evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true);
     await page.getByRole('button', { name: '返回历史' }).click();
-    await page.locator('.window').screenshot({ path: `test-results/history-${width}-${zoom}.png` });
+    const list = page.locator('.history-list');
+    await expect(list).toHaveCSS('scrollbar-width', 'none');
+    for (const count of [0, 1, 100]) {
+      await page.evaluate(count => window.relayTest.textPush({ entries: Array.from({ length: count }, (_, index) => ({ pinned: false, id: count - index, time: Date.now() - index * 86400000, text: `  记录 ${index}\n第二行😀\n第三行` })) }), count);
+      await expect(page.locator('.history-entry')).toHaveCount(count);
+      const layout = await list.evaluate((el: HTMLElement) => ({ scrolling: el.scrollHeight > el.clientHeight, gutter: el.offsetWidth - el.clientWidth, fitsWidth: el.scrollWidth <= el.clientWidth }));
+      expect(layout.scrolling, `${width}px/${zoom}/${count}: history scrolling`).toBe(count === 100);
+      expect(layout.fitsWidth).toBe(true);
+      expect(layout.gutter, `${width}px/${zoom}/${count}: hidden scrollbar occupies no space`).toBe(0);
+      const clearBox = (await button.boundingBox())!;
+      expect(clearBox).toEqual(clearRight);
+      if (count) await expect(button).toBeEnabled();
+      else await expect(button).toBeDisabled();
+      if (count) {
+        const entry = (await page.locator('.history-entry').first().boundingBox())!;
+        expect(Math.abs(clearBox.x + clearBox.width - entry.x - entry.width), `${width}px/${zoom}/${count}: record right edge`).toBeLessThanOrEqual(1);
+      }
+      if (count === 100) {
+        await list.hover();
+        await page.mouse.wheel(0, 300);
+        await expect.poll(() => list.evaluate(el => el.scrollTop)).toBeGreaterThan(0);
+        await list.focus();
+        await list.press('Home');
+        await expect.poll(() => list.evaluate(el => el.scrollTop)).toBe(0);
+        await list.press('PageDown');
+        await expect.poll(() => list.evaluate(el => el.scrollTop)).toBeGreaterThan(0);
+        await list.press('End');
+        await expect.poll(() => list.evaluate(el => Math.abs(el.scrollHeight - el.clientHeight - el.scrollTop))).toBeLessThanOrEqual(1);
+        await list.press('PageUp');
+        await expect.poll(() => list.evaluate(el => el.scrollTop + el.clientHeight < el.scrollHeight)).toBe(true);
+        await list.press('Home');
+        await expect.poll(() => list.evaluate(el => el.scrollTop)).toBe(0);
+      }
+      expect((await page.locator('.window').boundingBox())!.height).toBe(height);
+      await page.locator('.window').screenshot({ path: `test-results/history-${count}-${width}-${zoom}.png` });
+    }
     await page.locator('#settings-tab').click();
     await page.getByRole('checkbox', { name: '保存历史输入记录' }).scrollIntoViewIfNeeded();
     expect(await page.locator('.settings-content').evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true);
@@ -684,6 +720,7 @@ test(`about links, keyboard navigation and offline license retain the editor sta
 
 test('about update states use the available space at narrow widths and zoom', async ({ page }) => {
   await openApp(page);
+  await page.evaluate(() => window.relayTest.updatePush({ autoCheck: false }));
   for (const zoom of [1, 1.5]) {
     for (const width of [600, 320]) {
       await page.setViewportSize({ width, height: 1200 });
