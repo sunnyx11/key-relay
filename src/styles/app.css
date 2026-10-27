@@ -37,6 +37,7 @@
 .history-view:hover:enabled { background: var(--tab-hover); }
 .history-view:focus-visible { outline-offset: -2px; }
 .history-preview { width: 100%; white-space: nowrap; line-height: 1.6; overflow: hidden; text-overflow: ellipsis; }
+.history-number { color: var(--accent); font-size: 10px; }
 .history-meta { flex-shrink: 0; white-space: nowrap; font-size: 12px; color: var(--muted); }
 .history-actions { display: flex; flex-shrink: 0; gap: 4px; }
 .history-actions > .button { width: 26px; height: 26px; padding: 4px; display: grid; place-items: center; }

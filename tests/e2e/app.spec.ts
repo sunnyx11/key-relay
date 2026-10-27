@@ -297,6 +297,9 @@ test('history rows and text preferences fit narrow widths and zoom without chang
     expect(await page.locator('.history-list').evaluate(el => el.scrollHeight > el.clientHeight)).toBe(true);
     expect(await page.locator('.history-list').evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true);
     expect(await page.locator('.history-preview').first().evaluate(el => getComputedStyle(el).whiteSpace)).toBe('nowrap');
+    await expect(page.locator('.history-preview').first()).toHaveCSS('font-size', '13px');
+    await expect(page.locator('.history-number').first()).toHaveCSS('font-size', '10px');
+    await expect(page.locator('.history-number').first()).toHaveCSS('color', 'rgb(50, 103, 152)');
     expect(await page.locator('.history-preview').first().evaluate(el => getComputedStyle(el).textOverflow)).toBe('ellipsis');
     expect(await page.locator('.history-preview').first().evaluate(el => el.clientWidth)).toBeGreaterThanOrEqual(100);
     expect(await page.locator('.history-meta').first().evaluate(el => el.clientHeight)).toBeLessThanOrEqual(20);

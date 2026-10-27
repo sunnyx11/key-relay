@@ -55,7 +55,7 @@ export function HistoryPanel({ hidden, busy, archive, onRestore, onChange }: {
           <h2>{label}</h2>
           {records.map(({ entry, number }) => <article className="history-entry" key={entry.id} data-entry-id={entry.id}>
             <button className="history-view" disabled={busy} aria-label={`查看记录：${entry.text.slice(0, 80)}`} onClick={event => { viewButton.current = event.currentTarget; setConfirming(false); setViewed(entry); }}>
-              <span className="history-preview">{number}{' '}{entry.text.replace(/[\r\n]+/g, ' ')}</span>
+              <span className="history-preview"><span className="history-number">{number}</span>{' '}{entry.text.replace(/[\r\n]+/g, ' ')}</span>
             </button>
             <span className="history-meta"><time dateTime={new Date(entry.time).toISOString()}>{new Date(entry.time).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false })}</time></span>
             <div className="history-actions">
