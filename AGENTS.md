@@ -8,6 +8,7 @@
 - 首版基准形成后的需求变更使用 Change。开发前读取相关规范及适用的 Change，实现验证后同步关联规范。
 - 文档维护规则见 [Project 原则](docs/project/principles.md#文档维护要求)。
 - 准备提交、选择版本或执行发布时，先阅读 [版本发布](docs/release.md)。[版本策略](docs/release.md#版本策略)优先于 `git-release` 的通用破坏性变更规则，版本文件按[版本同步文件清单](docs/release.md#版本同步文件)核对。
+- `CHANGELOG.md` 记录已确认的使用者可见变更；待确认问题和待验收事项在变更日志之外管理。
 - 更新文档后，在仓库根目录依次执行：
 
 ```bash

@@ -4,6 +4,20 @@
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-10-27
+
+### Added
+
+- 默认保存并恢复草稿，可在设置中关闭；草稿以明文保存。
+- 提供发送历史的搜索、查看、恢复、删除和置顶，支持设置保存上限；历史以明文保存。
+- 重复启动时唤起已有窗口，并保留当前会话。
+
+### Changed
+
+- 默认置顶窗口，退出后恢复窗口大小与位置。
+- 配置保存至 `%USERPROFILE%\.key-relay\`；旧目录的设置和更新偏好不会自动迁移。
+- 独立 EXE 附件名称包含版本号；手动替换时沿用原文件名可保留快捷方式。
+
 ## [0.4.0] - 2026-10-16
 
 ### Added
@@ -21,8 +35,6 @@
 
 - 移除启动倒计时及等待时间设置，已有配置中的有效字符间隔与快捷键继续保留。
 
-Windows 150% 系统缩放、混合缩放、其他显示器排列及 RDP 实际兼容性待人工验收。
-
 ## [0.3.0] - 2026-10-10
 
 ### Added
@@ -39,8 +51,6 @@ Windows 150% 系统缩放、混合缩放、其他显示器排列及 RDP 实际�
 ### Fixed
 
 - 修复任务中止后控件无法恢复操作的问题，保留中止鼠标操作的释放保护。
-
-Windows 150% 系统缩放、跨显示器显示及 RDP 实际兼容性待人工验收。
 
 ## [0.2.4] - 2026-10-08
 
@@ -90,9 +100,8 @@ Windows 150% 系统缩放、跨显示器显示及 RDP 实际兼容性待人工�
 - 提供当前用户安装包，缺少 WebView2 时联网安装运行时。
 - 提供 Windows x64 独立 EXE，使用系统 WebView2。
 
-Windows 100% 系统缩放下的界面显示与 RDP 实际兼容性待人工验证。
-
-[Unreleased]: https://github.com/sunnyx11/key-relay/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/sunnyx11/key-relay/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/sunnyx11/key-relay/releases/tag/v0.5.0
 [0.4.0]: https://github.com/sunnyx11/key-relay/releases/tag/v0.4.0
 [0.3.0]: https://github.com/sunnyx11/key-relay/releases/tag/v0.3.0
 [0.2.4]: https://github.com/sunnyx11/key-relay/releases/tag/v0.2.4
