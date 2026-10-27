@@ -41,7 +41,7 @@ export function HistoryPanel({ hidden, busy, archive, onRestore, onChange }: {
         <pre className="history-full-text" aria-label="历史记录全文" tabIndex={0}>{viewed.text}</pre>
       </section>}
       <div className="history-toolbar" hidden={!!viewed}>
-        <input ref={search} type="search" aria-label="搜索历史内容" placeholder="搜索历史内容…" value={query} onChange={event => setQuery(event.target.value)} />
+        <input className="text-control" ref={search} type="search" aria-label="搜索历史内容" placeholder="搜索历史内容…" value={query} onChange={event => setQuery(event.target.value)} />
         <button className="button" ref={clearButton} disabled={busy || !archive.entries.length} onClick={() => { setIncludePinned(false); setConfirming(true); }}>清空历史</button>
       </div>
       {confirming && <div className="history-confirmation" role="group" aria-label="清空历史确认">

@@ -12,8 +12,9 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .tool-button::after { content: attr(data-tooltip); position: absolute; right: 0; bottom: calc(100% + 7px); padding: 4px 7px; border: 1px solid var(--control-line); background: var(--paper); color: var(--text); font-size: 12px; font-weight: 400; line-height: 1.5; white-space: nowrap; opacity: 0; visibility: hidden; pointer-events: none; z-index: 1; }
 .tool-button:is(:hover, :focus-visible):enabled::after { opacity: 1; visibility: visible; }
 #clear:hover:enabled { color: var(--error); background: #f9eae8; border-color: var(--error); }
-textarea { display: block; width: 100%; border: 1px solid var(--control-line); border-radius: 0; background: var(--paper); padding: 9px 10px; line-height: 1.8; resize: none; }
-#source:focus-visible, #shortcut:focus-visible { outline-offset: -2px; }
+.text-control { border: 1px solid var(--control-line); background: var(--paper); }
+.text-control:focus-visible, #shortcut:focus-visible { outline-offset: -2px; }
+textarea { display: block; width: 100%; padding: 9px 10px; line-height: 1.8; resize: none; }
 textarea::placeholder { color: var(--placeholder); }
 textarea[readonly] { background: var(--control-surface); }
 input[type="number"] { height: var(--control-height); width: 66px; padding: 2px 7px; border: 1px solid var(--control-line); background: var(--paper); }

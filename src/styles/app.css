@@ -27,7 +27,7 @@
 .history-content { position: absolute; inset: 12px 0 5px; padding: 3px; display: flex; flex-direction: column; gap: 8px; }
 .history-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; flex-shrink: 0; padding: 2px; }
 .history-toolbar > .button { flex-shrink: 0; margin-left: auto; }
-.history-toolbar input { flex: 1 1 140px; min-width: 0; height: 26px; padding: 2px 7px; border: 1px solid var(--control-line); background: var(--paper); font-size: 13px; }
+.history-toolbar input { flex: 1 1 140px; min-width: 0; height: 26px; padding: 2px 7px; font-size: 13px; }
 .history-list { min-height: 40px; overflow: auto; scrollbar-width: none; flex: 1; padding: 2px; }
 .history-list:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
 .history-group h2 { margin: 4px 0 6px; font-size: 12px; font-weight: 400; color: var(--muted); }
@@ -53,7 +53,7 @@
 .history-footer { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; flex-shrink: 0; min-height: 26px; color: var(--muted); font-size: 12px; }
 .history-confirmation { flex-shrink: 0; padding: 7px 8px; border: 1px solid var(--line); background: var(--paper); font-size: 12px; line-height: 1.7; }
 .history-confirmation p { margin: 0 0 6px; }
-.history-confirmation label { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
+.history-confirmation label { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; line-height: normal; }
 .history-confirmation input { width: 14px; height: 14px; margin: 0; flex-shrink: 0; accent-color: var(--accent); }
 .history-confirmation .button-group { justify-content: flex-start; }
 #source { flex: 1; min-height: 0; }

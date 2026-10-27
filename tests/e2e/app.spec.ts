@@ -202,9 +202,19 @@ test('history searches complete originals and keeps immediate deletion and clear
     { pinned: false, id: 2, time: today, text: '第一行\n  第二行\n隐藏在预览之后的匹配内容😀' },
     { pinned: false, id: 1, time: yesterday.getTime(), text: '昨天的内容' },
   ] });
+  const source = page.locator('#source');
+  await source.focus();
+  await expect(source).toHaveCSS('outline-offset', '-2px');
+  await expect(source).toHaveCSS('border-color', 'rgb(170, 170, 170)');
   await page.locator('#history-tab').click();
   await expect(page.getByRole('heading', { name: '今天' })).toBeVisible();
   await expect(page.getByRole('heading', { name: '昨天' })).toBeVisible();
+  const search = page.getByRole('searchbox');
+  const searchBounds = await search.boundingBox();
+  await search.focus();
+  await expect(search).toHaveCSS('outline-offset', '-2px');
+  await expect(search).toHaveCSS('outline-width', '2px');
+  expect(await search.boundingBox()).toEqual(searchBounds);
   await page.getByRole('searchbox').fill('预览之后');
   await expect(page.locator('.history-entry')).toHaveCount(1);
   await page.getByRole('searchbox').fill('');
@@ -248,6 +258,15 @@ test('pin order persists across reload and clear counts include records outside 
   for (const [width, zoom] of [[600, 1], [320, 1.5]]) {
     await page.setViewportSize({ width, height: 600 });
     await page.evaluate(value => { document.body.style.zoom = String(value); }, zoom);
+    const alignment = await page.getByRole('checkbox', { name: '同时删除置顶记录' }).evaluate(checkbox => {
+      const text = checkbox.parentElement!.lastChild!;
+      const range = document.createRange();
+      range.selectNodeContents(text);
+      const box = checkbox.getBoundingClientRect();
+      const textBox = range.getBoundingClientRect();
+      return Math.abs(box.top + box.height / 2 - textBox.top - textBox.height / 2);
+    });
+    expect(alignment, `${width}px/${zoom}: checkbox and text alignment`).toBeLessThanOrEqual(0.5 * zoom);
     await page.locator('.window').screenshot({ path: `test-results/history-confirmation-${width}-${zoom}.png` });
   }
   await page.getByRole('button', { name: '确认' }).click();
