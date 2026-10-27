@@ -78,27 +78,28 @@ test('rejects missing, duplicate, empty and invalid-date changelog entries', asy
   }
 });
 
-test('bundles the two current binaries, notes and exact SHA-256 sums', async t => {
+for (const version of ['0.2.0', '0.2.0-rc.1']) test(`bundles ${version} binaries, notes and exact SHA-256 sums`, async t => {
   const { bundleRelease } = await import('./release.mjs');
-  const { root } = fixture(t);
+  const { root } = fixture(t, version);
   const binaryRoot = join(root, 'src-tauri/target/release');
   mkdirSync(join(binaryRoot, 'bundle/nsis'), { recursive: true });
   writeFileSync(join(binaryRoot, 'key-relay.exe'), 'application');
-  writeFileSync(join(binaryRoot, 'bundle/nsis/Key Relay_0.2.0_x64-setup.exe'), 'installer');
-  writeFileSync(join(binaryRoot, 'bundle/nsis/Key Relay_0.2.0_x64-setup.exe.sig'), 'signed-installer');
+  writeFileSync(join(binaryRoot, `bundle/nsis/Key Relay_${version}_x64-setup.exe`), 'installer');
+  writeFileSync(join(binaryRoot, `bundle/nsis/Key Relay_${version}_x64-setup.exe.sig`), 'signed-installer');
   writeFileSync(join(binaryRoot, 'bundle/nsis/Key Relay_0.1.0_x64-setup.exe'), 'old installer');
-  const output = bundleRelease(root, 'v0.2.0');
-  assert.deepEqual(readdirSync(output).sort(), ['key-relay_0.2.0_x64-setup.exe', 'key-relay_0.2.0_x64-setup.exe.sig', 'latest.json', 'SHA256SUMS.txt', 'key-relay.exe', 'release-notes.md'].sort());
-  assert.deepEqual(readFileSync(join(output, 'key-relay_0.2.0_x64-setup.exe')), readFileSync(join(binaryRoot, 'bundle/nsis/Key Relay_0.2.0_x64-setup.exe')));
-  assert.deepEqual(readFileSync(join(output, 'key-relay_0.2.0_x64-setup.exe.sig')), readFileSync(join(binaryRoot, 'bundle/nsis/Key Relay_0.2.0_x64-setup.exe.sig')));
+  const output = bundleRelease(root, `v${version}`);
+  const installer = `key-relay_${version}_x64-setup.exe`;
+  const portable = `key-relay_${version}_x64.exe`;
+  const files = [installer, portable, `${installer}.sig`, 'latest.json'];
+  assert.deepEqual(readdirSync(output).sort(), [...files, 'SHA256SUMS.txt', 'release-notes.md'].sort());
+  assert.deepEqual(readFileSync(join(output, portable)), readFileSync(join(binaryRoot, 'key-relay.exe')));
+  assert.deepEqual(readFileSync(join(output, installer)), readFileSync(join(binaryRoot, `bundle/nsis/Key Relay_${version}_x64-setup.exe`)));
+  assert.deepEqual(readFileSync(join(output, `${installer}.sig`)), readFileSync(join(binaryRoot, `bundle/nsis/Key Relay_${version}_x64-setup.exe.sig`)));
   const manifest = JSON.parse(readFileSync(join(output, 'latest.json'), 'utf8'));
-  assert.equal(manifest.version, '0.2.0');
+  assert.equal(manifest.version, version);
   assert.equal(manifest.platforms['windows-x86_64'].signature, 'signed-installer');
-  assert.equal(manifest.platforms['windows-x86_64'].url, 'https://github.com/sunnyx11/key-relay/releases/download/v0.2.0/key-relay_0.2.0_x64-setup.exe');
-  for (const line of readFileSync(join(output, 'SHA256SUMS.txt'), 'utf8').trim().split('\n')) {
-    const [hash, name] = line.split('  ');
-    assert.equal(hash, createHash('sha256').update(readFileSync(join(output, name))).digest('hex'));
-  }
+  assert.equal(manifest.platforms['windows-x86_64'].url, `https://github.com/sunnyx11/key-relay/releases/download/v${version}/${installer}`);
+  assert.equal(readFileSync(join(output, 'SHA256SUMS.txt'), 'utf8'), files.map(name => `${createHash('sha256').update(readFileSync(join(output, name))).digest('hex')}  ${name}\n`).join(''));
   assert.equal(readFileSync(join(output, 'release-notes.md'), 'utf8'), '### Added\n- 关于页。\n');
 });
 

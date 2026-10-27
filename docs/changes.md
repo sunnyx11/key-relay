@@ -48,6 +48,14 @@
 
   - 完成时间：无
 
+- [text-input/035](domains/text-input/changes/035-change.md)：
+
+  - 变更目的：独立程序发布附件的名称包含版本和架构，便于区分不同版本。
+
+  - 创建时间：2026-10-27 11:25:23
+
+  - 完成时间：无
+
 ## completed
 
 - [text-input/001](domains/text-input/changes/001-change.md)：

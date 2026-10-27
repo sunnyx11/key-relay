@@ -8,7 +8,7 @@ import { createHash } from 'node:crypto';
 function fixture(t, existing = [], version = '0.2.0') {
   const directory = mkdtempSync(join(tmpdir(), 'key-relay-publish-test-'));
   t.after(() => rmSync(directory, { recursive: true, force: true }));
-  const files = [`key-relay_${version}_x64-setup.exe`, 'key-relay.exe', `key-relay_${version}_x64-setup.exe.sig`, 'latest.json'];
+  const files = [`key-relay_${version}_x64-setup.exe`, `key-relay_${version}_x64.exe`, `key-relay_${version}_x64-setup.exe.sig`, 'latest.json'];
   for (const file of files) writeFileSync(join(directory, file), file);
   writeFileSync(join(directory, 'latest.json'), JSON.stringify({ version, pub_date: '2026-10-03T00:00:00.000Z', notes: '### Added\n- About tab.\n', platforms: { 'windows-x86_64': { signature: files[2], url: `https://github.com/owner/repo/releases/download/v${version}/${encodeURIComponent(files[0])}` } } }));
   writeFileSync(join(directory, 'SHA256SUMS.txt'), files.map(file => `${createHash('sha256').update(readFileSync(join(directory, file))).digest('hex')}  ${file}\n`).join(''));
@@ -21,7 +21,7 @@ function fixture(t, existing = [], version = '0.2.0') {
       return { data: { id: 7, upload_url: 'https://uploads.github.com/repos/owner/repo/releases/7/assets{?name,label}', html_url: 'https://github.com/owner/repo/releases/7' } };
     };
   }
-  const github = { rest: { repos }, paginate: async method => method === repos.listReleases ? existing : [{ id: 11, name: 'key-relay.exe' }] };
+  const github = { rest: { repos }, paginate: async method => method === repos.listReleases ? existing : [{ id: 11, name: `key-relay_${version}_x64.exe` }, { id: 12, name: 'key-relay.exe' }] };
   return { directory, calls, github, repo: { owner: 'owner', repo: 'repo' } };
 }
 
@@ -35,7 +35,7 @@ test('creates only a draft and uploads the five verified attachments', async t =
   assert.equal(create.tag_name, 'v0.2.0');
   assert.equal(create.name, 'v0.2.0');
   assert.equal(create.body, '### Added\n- About tab.\n');
-  assert.deepEqual(f.calls.filter(call => call.name === 'uploadReleaseAsset').map(call => call.args.name).sort(), ['key-relay_0.2.0_x64-setup.exe', 'key-relay_0.2.0_x64-setup.exe.sig', 'latest.json', 'SHA256SUMS.txt', 'key-relay.exe'].sort());
+  assert.deepEqual(f.calls.filter(call => call.name === 'uploadReleaseAsset').map(call => call.args.name).sort(), ['key-relay_0.2.0_x64-setup.exe', 'key-relay_0.2.0_x64-setup.exe.sig', 'latest.json', 'SHA256SUMS.txt', 'key-relay_0.2.0_x64.exe'].sort());
 });
 
 test('marks prerelease drafts from the tag suffix', async t => {
@@ -44,6 +44,7 @@ test('marks prerelease drafts from the tag suffix', async t => {
   await publishDraft(f.github, f.repo, 'v0.2.0-rc.1', f.directory);
   assert.equal(f.calls.find(call => call.name === 'createRelease').args.prerelease, true);
   assert.equal(f.calls.find(call => call.name === 'createRelease').args.name, 'v0.2.0-rc.1');
+  assert.ok(f.calls.some(call => call.name === 'uploadReleaseAsset' && call.args.name === 'key-relay_0.2.0-rc.1_x64.exe'));
 });
 
 test('GitHub lookup failure stops without creating a replacement release', async t => {
@@ -61,7 +62,7 @@ test('rerun updates the existing draft and replaces matching attachments', async
   assert.equal(f.calls.some(call => call.name === 'createRelease'), false);
   assert.equal(f.calls.find(call => call.name === 'updateRelease').args.draft, true);
   assert.equal(f.calls.find(call => call.name === 'updateRelease').args.name, 'v0.2.0');
-  assert.equal(f.calls.find(call => call.name === 'deleteReleaseAsset').args.asset_id, 11);
+  assert.deepEqual(f.calls.filter(call => call.name === 'deleteReleaseAsset').map(call => call.args.asset_id), [11]);
 });
 
 test('published release is never edited or uploaded to', async t => {
@@ -74,7 +75,7 @@ test('published release is never edited or uploaded to', async t => {
 test('corrupted attachments stop before any GitHub mutation', async t => {
   const { publishDraft } = await import('./publish-release.mjs');
   const f = fixture(t);
-  writeFileSync(join(f.directory, 'key-relay.exe'), 'corrupted');
+  writeFileSync(join(f.directory, 'key-relay_0.2.0_x64.exe'), 'corrupted');
   await assert.rejects(publishDraft(f.github, f.repo, 'v0.2.0', f.directory), /checksum/i);
   assert.deepEqual(f.calls, []);
 });
@@ -88,7 +89,7 @@ test('invalid updater metadata stops before any GitHub mutation even with valid 
     if (field === 'signature' || field === 'url') manifest.platforms['windows-x86_64'][field] = 'invalid';
     else manifest[field] = 'invalid';
     writeFileSync(manifestPath, JSON.stringify(manifest));
-    const files = ['key-relay_0.2.0_x64-setup.exe', 'key-relay.exe', 'key-relay_0.2.0_x64-setup.exe.sig', 'latest.json'];
+    const files = ['key-relay_0.2.0_x64-setup.exe', 'key-relay_0.2.0_x64.exe', 'key-relay_0.2.0_x64-setup.exe.sig', 'latest.json'];
     writeFileSync(join(f.directory, 'SHA256SUMS.txt'), files.map(file => `${createHash('sha256').update(readFileSync(join(f.directory, file))).digest('hex')}  ${file}\n`).join(''));
     await assert.rejects(publishDraft(f.github, f.repo, 'v0.2.0', f.directory), /manifest/i);
     assert.deepEqual(f.calls, []);

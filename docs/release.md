@@ -63,12 +63,12 @@ npm.cmd run tauri -- build --no-bundle -- --locked
 | 附件 | 用途 |
 | --- | --- |
 | `key-relay_<版本>_x64-setup.exe` | 当前用户 NSIS 安装程序 |
-| `key-relay.exe` | 免安装启动，使用系统 WebView2；与安装版共用 `%USERPROFILE%\.key-relay\` 数据及单实例 |
+| `key-relay_<版本>_x64.exe` | 免安装启动，使用系统 WebView2；与安装版共用 `%USERPROFILE%\.key-relay\` 数据及单实例 |
 | `key-relay_<版本>_x64-setup.exe.sig` | Tauri 更新签名，内容与安装包对应 |
 | `latest.json` | 版本、说明、构建时刻及 Windows x64 的安装包 URL 和完整签名 |
 | `SHA256SUMS.txt` | 其余四个附件的 SHA-256，格式为十六进制值、两个空格、文件名 |
 
-应用产品名为 `Key Relay`。Tauri 生成的安装包名为 `Key Relay_<版本>_x64-setup.exe`，附件准备阶段将其与 `.sig` 按表中名称复制，保留原始字节。更新清单 URL 和 SHA-256 文件均引用发布附件名。
+应用产品名为 `Key Relay`。Tauri 生成的安装包名为 `Key Relay_<版本>_x64-setup.exe`，独立程序名为 `key-relay.exe`。附件准备阶段将安装包、签名和独立程序按表中名称复制，保留原始字节。更新清单 URL 和 SHA-256 文件均引用发布附件名。独立程序手动更新时，替换原文件需使用原文件名，已有快捷方式才能继续指向更新后的程序。
 
 草稿正文为 CHANGELOG.md 中该版本的内容。预发布后缀对应 GitHub 的 prerelease 标记。Actions 中间产物保留 14 天，包含五个附件及传递正文用的 `release-notes.md`。
 
@@ -214,7 +214,7 @@ npm run release:bundle -- v0.2.0
 输出目录为 `src-tauri/target/release-assets/v0.2.0/`，包含五个附件与 `release-notes.md`。校验文件计算安装包、独立 EXE、签名和清单。Windows 可通过以下命令核对：
 
 ```powershell
-Get-FileHash 'src-tauri/target/release-assets/v0.2.0/key-relay.exe' -Algorithm SHA256
+Get-FileHash 'src-tauri/target/release-assets/v0.2.0/key-relay_0.2.0_x64.exe' -Algorithm SHA256
 Get-FileHash 'src-tauri/target/release-assets/v0.2.0/key-relay_0.2.0_x64-setup.exe' -Algorithm SHA256
 ```
 
@@ -234,7 +234,7 @@ Get-FileHash 'src-tauri/target/release-assets/v0.2.0/key-relay_0.2.0_x64-setup.e
 
 - 版本或 CHANGELOG 校验失败：修正内容后创建新的发布提交与版本标签。已推送标签保留原指向。
 - 下载、构建服务或上传暂时失败：在 Actions 使用 Re-run failed jobs；同标签任务按顺序执行。
-- 首次上传中断时，已创建的 Release 保持草稿，可能只有部分附件。重试会更新草稿正文并替换五个附件中的同名文件。
+- 首次上传中断时，已创建的 Release 保持草稿，可能只有部分附件。重试会更新草稿正文并替换五个附件中的同名文件。草稿中的其他名称附件保持原样，公开前检查附件清单。
 - Release 已公开时，自动上传任务失败并保持公开内容。后续变化使用新版本发布。
 - 权限不足时，检查 Actions 日志和仓库或组织的令牌权限策略。
 

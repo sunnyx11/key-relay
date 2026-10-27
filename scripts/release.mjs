@@ -59,7 +59,7 @@ export function bundleRelease(root, tag) {
   const builtInstaller = `src-tauri/target/release/bundle/nsis/Key Relay_${release.version}_x64-setup.exe`;
   const sources = [
     [installer, builtInstaller],
-    ['key-relay.exe', 'src-tauri/target/release/key-relay.exe'],
+    [`key-relay_${release.version}_x64.exe`, 'src-tauri/target/release/key-relay.exe'],
     [`${installer}.sig`, `${builtInstaller}.sig`],
   ];
   const binaries = sources.map(([name, path]) => {

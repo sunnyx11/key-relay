@@ -4,7 +4,7 @@ Key Relay 是 Windows 文本自动输入工具，可将准备好的文本作为�
 
 ## 使用方法
 
-支持 Windows 10／11 x64。从 [Releases](https://github.com/sunnyx11/key-relay/releases/latest) 下载并运行安装包，也可使用免安装的 `key-relay.exe`。程序依赖 WebView2，安装包会在缺少运行时时联网安装。
+支持 Windows 10／11 x64。从 [Releases](https://github.com/sunnyx11/key-relay/releases/latest) 下载并运行安装包，也可使用免安装程序。程序依赖 WebView2，安装包会在缺少运行时时联网安装。
 
 1. 在“输入”页填写或粘贴文本。
 2. 点击 Key Relay 外的目标输入位置。工具记录该次点击的屏幕坐标与窗口，输入页显示“已记录输入位置”，悬停或聚焦提示可查看窗口标题与坐标。
