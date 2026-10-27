@@ -27,10 +27,10 @@ beforeEach(() => {
   closeNotify = () => {};
   vi.mocked(bridge.close).mockResolvedValue();
   vi.mocked(bridge.subscribeClose).mockImplementation(async handler => { closeNotify = handler; return () => {}; });
-  vi.mocked(archiveBridge.read).mockResolvedValue({ sequence: 1, draft: '', entries: [], restoreDraft: true, saveHistory: true, error: null });
+  vi.mocked(archiveBridge.read).mockResolvedValue({ sequence: 1, draft: '', entries: [], restoreDraft: true, saveHistory: true, maxHistoryEntries: 100, error: null });
   vi.mocked(archiveBridge.subscribe).mockImplementation(async handler => { archiveNotify = handler; return () => {}; });
-  vi.mocked(archiveBridge.change).mockResolvedValue({ sequence: 2, draft: '', entries: [], restoreDraft: true, saveHistory: true, error: null });
-  vi.mocked(archiveBridge.flush).mockResolvedValue({ sequence: 3, draft: '', entries: [], restoreDraft: true, saveHistory: true, error: null });
+  vi.mocked(archiveBridge.change).mockResolvedValue({ sequence: 2, draft: '', entries: [], restoreDraft: true, saveHistory: true, maxHistoryEntries: 100, error: null });
+  vi.mocked(archiveBridge.flush).mockResolvedValue({ sequence: 3, draft: '', entries: [], restoreDraft: true, saveHistory: true, maxHistoryEntries: 100, error: null });
   vi.mocked(updateBridge.snapshot).mockResolvedValue(updateInitial);
   vi.mocked(updateBridge.subscribe).mockImplementation(async handler => { updateNotify = handler; return () => {}; });
   vi.mocked(updateBridge.check).mockResolvedValue({ ...updateInitial, sequence: 2, phase: 'available', version: '2.0.0', notes: '修复输入问题' });
@@ -58,8 +58,8 @@ async function mount() {
 }
 describe('editor and native task integration', () => {
   it('keeps the full pinned archive notice visible across task progress and clears it after capacity is freed', async () => {
-    const entries = Array.from({ length: 100 }, (_, i) => ({ id: i + 1, time: i + 1, text: `saved ${i}`, pinned: true }));
-    const saved: TextState = { sequence: 1, draft: '', entries, restoreDraft: true, saveHistory: true, error: null };
+    const entries = Array.from({ length: 3 }, (_, i) => ({ id: i + 1, time: i + 1, text: `saved ${i}`, pinned: true }));
+    const saved: TextState = { sequence: 1, draft: '', entries, restoreDraft: true, saveHistory: true, maxHistoryEntries: 3, error: null };
     vi.mocked(archiveBridge.read).mockResolvedValue(saved);
     await mount();
     const warning = screen.getByText(/历史记录已满且全部置顶/);
@@ -71,7 +71,7 @@ describe('editor and native task integration', () => {
     expect(screen.queryByText(/历史记录已满且全部置顶/)).not.toBeInTheDocument();
   });
   it('restores a saved draft before initial synchronization and exposes the history tab', async () => {
-    const saved: TextState = { sequence: 1, draft: '上次\n  草稿😀', entries: [], restoreDraft: true, saveHistory: true, error: null };
+    const saved: TextState = { sequence: 1, draft: '上次\n  草稿😀', entries: [], restoreDraft: true, saveHistory: true, maxHistoryEntries: 100, error: null };
     vi.mocked(archiveBridge.read).mockResolvedValue(saved);
     await mount();
     expect(screen.getByRole('textbox', { name: '待输入文本' })).toHaveValue(saved.draft);
@@ -100,7 +100,7 @@ describe('editor and native task integration', () => {
     await mount();
     const source = screen.getByRole('textbox', { name: '待输入文本' });
     fireEvent.input(source, { target: { value: '最新编辑' } });
-    const failed: TextState = { sequence: 20, draft: '旧快照', entries: [], restoreDraft: true, saveHistory: true, error: '内容暂未保存，关闭后可能丢失。' };
+    const failed: TextState = { sequence: 20, draft: '旧快照', entries: [], restoreDraft: true, saveHistory: true, maxHistoryEntries: 100, error: '内容暂未保存，关闭后可能丢失。' };
     act(() => archiveNotify(failed));
     expect(source).toHaveValue('最新编辑');
     expect(screen.getByRole('alert')).toHaveTextContent('内容暂未保存');
@@ -112,7 +112,7 @@ describe('editor and native task integration', () => {
     expect(source).toHaveValue('最新编辑');
   });
   it('saves current edits when draft saving is enabled again', async () => {
-    const saved: TextState = { sequence: 1, draft: '已有副本', entries: [], restoreDraft: false, saveHistory: true, error: null };
+    const saved: TextState = { sequence: 1, draft: '已有副本', entries: [], restoreDraft: false, saveHistory: true, maxHistoryEntries: 100, error: null };
     vi.mocked(archiveBridge.read).mockResolvedValue(saved);
     vi.mocked(archiveBridge.change).mockResolvedValue({ ...saved, sequence: 2, restoreDraft: true });
     await mount();
@@ -165,7 +165,7 @@ describe('editor and native task integration', () => {
     await waitFor(() => expect(bridge.close).toHaveBeenCalledOnce());
   });
   it('queues current edits even when enabling draft saving fails and then retries', async () => {
-    const saved: TextState = { sequence: 1, draft: '旧副本', entries: [], restoreDraft: false, saveHistory: true, error: null };
+    const saved: TextState = { sequence: 1, draft: '旧副本', entries: [], restoreDraft: false, saveHistory: true, maxHistoryEntries: 100, error: null };
     vi.mocked(archiveBridge.read).mockResolvedValue(saved);
     vi.mocked(archiveBridge.change).mockResolvedValueOnce({ ...saved, sequence: 2, restoreDraft: true, error: '内容暂未保存，关闭后可能丢失。' }).mockResolvedValueOnce({ ...saved, sequence: 3, draft: '当前编辑', restoreDraft: true });
     await mount();
@@ -194,11 +194,11 @@ describe('editor and native task integration', () => {
     await waitFor(() => expect(finishFlush).toBeDefined());
     expect(screen.getByRole('textbox', { name: '待输入文本' })).toHaveAttribute('readonly');
     expect(screen.getByRole('button', { name: '开始输入' })).toBeDisabled();
-    await act(async () => finishFlush({ sequence: 30, draft: '即将退出', restoreDraft: true, saveHistory: true, entries: [], error: null }));
+    await act(async () => finishFlush({ sequence: 30, draft: '即将退出', restoreDraft: true, saveHistory: true, maxHistoryEntries: 100, entries: [], error: null }));
     await waitFor(() => expect(bridge.close).toHaveBeenCalledOnce());
   });
   it('submits current edits after an enabling request times out with a late native result', async () => {
-    const saved: TextState = { sequence: 1, draft: '旧副本', entries: [], restoreDraft: false, saveHistory: true, error: null };
+    const saved: TextState = { sequence: 1, draft: '旧副本', entries: [], restoreDraft: false, saveHistory: true, maxHistoryEntries: 100, error: null };
     vi.mocked(archiveBridge.read).mockResolvedValue(saved);
     vi.mocked(archiveBridge.change).mockRejectedValueOnce('任务响应超时');
     await mount();

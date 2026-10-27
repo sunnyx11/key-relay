@@ -9,7 +9,7 @@ export function useRelay() {
   const [settings, setSettings] = useState<DraftSettings>(defaults);
   const [text, setText] = useState('');
   const [ready, setReady] = useState(false);
-  const [archive, setArchive] = useState<TextState>({ sequence: 0, draft: '', entries: [], restoreDraft: true, saveHistory: true, error: null });
+  const [archive, setArchive] = useState<TextState>({ sequence: 0, draft: '', entries: [], restoreDraft: true, saveHistory: true, maxHistoryEntries: 100, error: null });
   const [restoredText, setRestoredText] = useState<string | null>(null);
   const [loadError, setLoadError] = useState('');
   const [attempt, setAttempt] = useState(0);

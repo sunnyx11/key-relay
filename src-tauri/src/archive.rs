@@ -24,6 +24,9 @@ pub struct HistoryEntry {
 pub struct TextData {
     pub restore_draft: bool,
     pub save_history: bool,
+    /// Total retained history, including pins; valid values are 1 through 10,000.
+    #[serde(default = "default_history_limit")]
+    pub max_history_entries: usize,
     pub draft: String,
     pub entries: Vec<HistoryEntry>,
     next_id: u64,
@@ -33,6 +36,7 @@ impl Default for TextData {
         Self {
             restore_draft: true,
             save_history: true,
+            max_history_entries: default_history_limit(),
             draft: String::new(),
             entries: Vec::new(),
             next_id: 1,
@@ -53,7 +57,8 @@ impl TextData {
             .map_err(|_| "读取上次内容失败，文本文件格式无效。".to_string())?;
         if data.next_id == 0
             || data.next_id >= 9_007_199_254_740_991
-            || data.entries.len() > 100
+            || !(1..=10_000).contains(&data.max_history_entries)
+            || data.entries.len() > data.max_history_entries
             || data.entries.iter().any(|entry| {
                 entry.id == 0
                     || entry.id >= data.next_id
@@ -114,18 +119,8 @@ impl TextData {
             entry.time = time;
             return;
         }
-        if self.entries.len() >= 100 {
-            let Some(index) = self
-                .entries
-                .iter()
-                .enumerate()
-                .filter(|(_, entry)| !entry.pinned)
-                .min_by_key(|(_, entry)| (entry.time, entry.id))
-                .map(|(index, _)| index)
-            else {
-                return;
-            };
-            self.entries.remove(index);
+        if self.entries.len() >= self.max_history_entries && !self.remove_oldest_unpinned() {
+            return;
         }
         self.entries.insert(
             0,
@@ -138,6 +133,23 @@ impl TextData {
         );
         self.next_id += 1;
     }
+    fn remove_oldest_unpinned(&mut self) -> bool {
+        let Some(index) = self
+            .entries
+            .iter()
+            .enumerate()
+            .filter(|(_, entry)| !entry.pinned)
+            .min_by_key(|(_, entry)| (entry.time, entry.id))
+            .map(|(index, _)| index)
+        else {
+            return false;
+        };
+        self.entries.remove(index);
+        true
+    }
+}
+fn default_history_limit() -> usize {
+    100
 }
 
 /// Frontend archive state, independent of task snapshots and ordered by sequence.
@@ -160,6 +172,9 @@ pub enum TextAction {
     Preferences {
         restore_draft: bool,
         save_history: bool,
+    },
+    HistoryLimit {
+        max_history_entries: usize,
     },
     Delete {
         id: u64,
@@ -276,6 +291,26 @@ impl Archive {
                             } => {
                                 value.restore_draft = restore_draft;
                                 value.save_history = save_history;
+                            }
+                            TextAction::HistoryLimit {
+                                max_history_entries,
+                            } => {
+                                if !(1..=10_000).contains(&max_history_entries) {
+                                    let _ = tx.send(Err("请输入 1～10,000 条的整数。".into()));
+                                    continue;
+                                }
+                                let pinned =
+                                    value.entries.iter().filter(|entry| entry.pinned).count();
+                                if max_history_entries < pinned {
+                                    let _ = tx.send(Err(format!(
+                                        "已有 {pinned} 条置顶记录，上限至少为 {pinned} 条。"
+                                    )));
+                                    continue;
+                                }
+                                value.max_history_entries = max_history_entries;
+                                while value.entries.len() > max_history_entries {
+                                    value.remove_oldest_unpinned();
+                                }
                             }
                             TextAction::Delete { id } => {
                                 value.entries.retain(|entry| entry.id != id);

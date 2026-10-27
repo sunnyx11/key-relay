@@ -13,7 +13,7 @@ async function openApp(page: Page, saved?: Partial<TextState>) {
     let pinned = false;
     const state: Snapshot = { sequence: 1, phase: 'idle', sent: 0, total: 0, target: { x: -900, y: 240, title: '记事本' }, message: '', settings: { intervalMs: 50, shortcut: 'F8' }, shortcutError: null };
     const update: UpdateSnapshot = { sequence: 1, phase: 'idle', installed: true, autoCheck: true, version: null, notes: '', downloaded: 0, total: null, message: '' };
-    const text: TextState = { sequence: 1, draft: '', entries: [], restoreDraft: true, saveHistory: true, error: null, ...JSON.parse(localStorage.getItem('relay-text-test') || JSON.stringify(initialText || {})) };
+    const text: TextState = { sequence: 1, draft: '', entries: [], restoreDraft: true, saveHistory: true, maxHistoryEntries: 100, error: null, ...JSON.parse(localStorage.getItem('relay-text-test') || JSON.stringify(initialText || {})) };
     window.relayTest = { state, update, text, textPush: patch => {
       Object.assign(text, patch, { sequence: text.sequence + 1 });
       localStorage.setItem('relay-text-test', JSON.stringify(text));
@@ -36,6 +36,12 @@ async function openApp(page: Page, saved?: Partial<TextState>) {
           if (command === 'change_text_state') {
             const action = args.action as TextAction;
             if (action.kind === 'preferences') Object.assign(text, { restoreDraft: action.restoreDraft, saveHistory: action.saveHistory });
+            if (action.kind === 'historyLimit') {
+              text.maxHistoryEntries = action.maxHistoryEntries;
+              const oldest = text.entries.filter(entry => !entry.pinned).sort((a, b) => a.time - b.time || a.id - b.id);
+              const removed = new Set(oldest.slice(0, Math.max(0, text.entries.length - text.maxHistoryEntries)).map(entry => entry.id));
+              text.entries = text.entries.filter(entry => !removed.has(entry.id));
+            }
             if (action.kind === 'delete') text.entries = text.entries.filter(entry => entry.id !== action.id);
             if (action.kind === 'pin') {
               const entry = text.entries.find(entry => entry.id === action.id);
@@ -97,6 +103,49 @@ test('saved draft survives reload, clear stays empty and disabled saving preserv
   await page.getByRole('button', { name: '清除已保存草稿', exact: true }).click();
   await page.getByRole('button', { name: '确认清除草稿' }).click();
   await expect.poll(() => page.evaluate(() => window.relayTest.text.draft)).toBe('');
+});
+
+test('maximum history setting applies trimming in one save, persists and fits narrow scaled windows', async ({ page }) => {
+  await openApp(page, { draft: '保留草稿', entries: [
+    { id: 3, time: 30, text: 'new', pinned: false },
+    { id: 2, time: 20, text: 'old', pinned: false },
+    { id: 1, time: 10, text: 'pin', pinned: true },
+  ] });
+  await page.locator('#settings-tab').click();
+  const limit = page.getByRole('spinbutton', { name: '最大历史条数' });
+  await expect(limit).toHaveValue('100');
+  await limit.fill('250');
+  await page.getByRole('button', { name: '保存上限' }).click();
+  await page.reload();
+  await page.locator('#settings-tab').click();
+  await expect(limit).toHaveValue('250');
+  await page.getByRole('checkbox', { name: '保存历史输入记录' }).uncheck();
+  await expect(limit).toHaveValue('250');
+  await expect(limit).toBeEnabled();
+  await limit.fill('2');
+  await page.getByRole('button', { name: '保存上限' }).click();
+  await expect.poll(() => page.evaluate(() => window.relayTest.text.entries.map(entry => entry.id))).toEqual([3, 1]);
+  expect(await page.evaluate(() => window.relayTest.text.draft)).toBe('保留草稿');
+  await expect(page.getByRole('group', { name: '调整历史上限确认' })).toHaveCount(0);
+  await expect(page.getByText(/将删除/)).toHaveCount(0);
+  for (const width of [600, 320]) for (const zoom of [1, 1.5]) {
+    await page.setViewportSize({ width, height: 450 });
+    await page.evaluate(value => { document.body.style.zoom = String(value); }, zoom);
+    await limit.scrollIntoViewIfNeeded();
+    const layout = await limit.evaluate(el => ({ height: el.getBoundingClientRect().height, font: getComputedStyle(el).fontSize }));
+    expect(layout.height).toBeGreaterThanOrEqual(28);
+    expect(layout.font).toBe('14px');
+    expect(await page.locator('.settings-content').evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true);
+    expect(await page.locator('.window').evaluate(el => el.scrollHeight <= el.clientHeight)).toBe(true);
+    await page.locator('.window').screenshot({ path: `test-results/history-limit-${width}-${zoom}.png` });
+  }
+  await page.reload();
+  await page.locator('#settings-tab').click();
+  await expect(limit).toHaveValue('2');
+  await limit.fill('0');
+  await expect(limit).toHaveAttribute('aria-invalid', 'true');
+  await expect(page.getByRole('button', { name: '保存上限' })).toBeDisabled();
+  expect(await page.getByRole('alert').evaluate(el => getComputedStyle(el).color)).toBe('rgb(161, 61, 50)');
 });
 
 test('history viewing preserves edits, search and list scroll before an explicit restoration', async ({ page }) => {
@@ -545,7 +594,7 @@ test('footer actions remain compact and keyboard accessible across widths and zo
     for (const width of [600, 510, 423, 422, 390, 320]) {
       await page.setViewportSize({ width, height: 1100 });
       await page.evaluate(value => { document.body.style.zoom = String(value); }, zoom);
-      const boxes = await page.locator('.button-group > button').evaluateAll(els => els.map(el => {
+      const boxes = await page.getByRole('group', { name: '输入操作' }).getByRole('button').evaluateAll(els => els.map(el => {
         const box = el.getBoundingClientRect();
         return { x: box.x, right: box.right, y: box.y, height: box.height, width: box.width };
       }));

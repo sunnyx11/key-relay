@@ -4,7 +4,7 @@ import { HistoryPanel } from './HistoryPanel';
 import type { TextState } from '../bridge';
 
 const text = '第一行\n  第二行😀\n\t第三行完整原文';
-const archive: TextState = { sequence: 1, draft: '当前草稿', entries: [{ id: 1, time: Date.now(), text, pinned: false }], restoreDraft: true, saveHistory: true, error: null };
+const archive: TextState = { sequence: 1, draft: '当前草稿', entries: [{ id: 1, time: Date.now(), text, pinned: false }], restoreDraft: true, saveHistory: true, maxHistoryEntries: 100, error: null };
 
 describe('history viewing and restoration', () => {
   it('opens read-only full text separately from restoration and returns focus to the filtered row', async () => {

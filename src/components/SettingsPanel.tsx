@@ -19,7 +19,8 @@ export function SettingsPanel({ hidden, busy, settings, shortcutError, onChange,
     </div>
   </section>;
 }
-function NumberSetting({ id, label, note, unit, min, max, value, disabled, error, onChange }: { id: string; label: string; note: string; unit: string; min: number; max: number; value: number | null; disabled: boolean; error: string; onChange: (value: number | null) => void }) {
+/** Shared integer field with inline range validation and an accessible unit description. */
+export function NumberSetting({ id, label, note, unit, min, max, value, disabled, error, onChange }: { id: string; label: string; note: string; unit: string; min: number; max: number; value: number | null; disabled: boolean; error: string; onChange: (value: number | null) => void }) {
   const invalid = value === null || !Number.isInteger(value) || value < min || value > max;
   return <div className="setting-row">
     <div className="setting-copy"><label htmlFor={id}>{label}</label><p id={`${id}-note`}>{note}</p></div>
