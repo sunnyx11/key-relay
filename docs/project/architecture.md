@@ -20,7 +20,6 @@
 - `src-tauri/src/commands.rs`、`lib.rs`：命令入口、应用装配与退出清理。
 - `tests/e2e/`、`src-tauri/tests/`：界面与原生集成检查。
 - `tests/manual/`：Windows 和 RDP 人工验收步骤。
-- `.github/workflows/ci.yml`：默认分支的前端检查、Rust 检查和 Release 编译，准备发布可复用的依赖缓存。
 - `.github/workflows/release.yml`：版本标签触发的并行检查与 Windows 构建，全部成功后执行 Release 草稿任务。
 - `scripts/release.mjs`：版本和更新说明校验、构建附件准备及 SHA-256 计算。
 - `scripts/publish-release.mjs`：草稿创建、更新与附件上传，使用 Actions 提供的 GitHub 客户端。
@@ -69,7 +68,7 @@
 
 ## 鉴权与信任边界
 
-CI 与发布配置分别执行前端检查、Rust 检查和 Release 编译。默认分支成功任务保存 Rust 检查和 Release 依赖编译缓存，标签任务恢复对应缓存。CI 的 Release 编译省去安装包生成及签名，发布附件由标签构建产生。
+日常开发在本地执行相关检查并构建人工测试程序。版本标签触发前端检查、Rust 检查和签名安装包构建。标签任务恢复可用的 Rust 依赖编译缓存，缓存缺失时重新编译。
 
 发布配置将只读检查和构建任务与具有 `contents: write` 权限的草稿任务分开。草稿任务等待全部检查和构建成功。附件通过 Actions 产物传递，发布前再次验证 SHA-256。缓存规则、重试规则和验证范围见[版本发布](../release.md)。
 

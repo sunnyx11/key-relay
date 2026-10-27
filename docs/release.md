@@ -31,24 +31,30 @@ Release 标题等于完整版本标签，例如 `v0.2.2` 或 `v0.2.2-rc.1`。创
 
 浏览器测试只安装 Chromium Headless Shell。`draft` 等待三个任务全部成功后，下载构建附件并创建或更新同标签的 Release 草稿。任一任务失败或取消时，草稿任务跳过。
 
-### 默认分支 CI 与缓存
+### 日常验证与缓存
 
-`.github/workflows/ci.yml` 在 `main` 推送时运行，也支持 Actions 手动执行。前端检查、Rust 检查和 Release 编译分别执行。Release 编译使用以下命令生成前端资源与优化后的应用：
+日常开发在本地按改动范围执行相关检查和测试，并生成 Windows x64 免安装程序供人工测试。GitHub Actions 在推送版本标签时执行发布流程。
+
+本地检查命令包括：
 
 ```powershell
+npm.cmd run lint
+npm.cmd test
+npm.cmd run test:release
+npm.cmd run specs
+npm.cmd run test:e2e
+cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
+cargo clippy --locked --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
+cargo test --locked --manifest-path src-tauri/Cargo.toml
 npm.cmd run tauri -- build --no-bundle -- --locked
 ```
 
-该命令省去安装包生成及签名，CI 无需签名私钥。公钥变量与发布构建一致，CI 仅验证编译并准备缓存，发布附件来自标签构建。
+`npm.cmd run specs` 会生成并检查规范索引。浏览器测试需要安装 Playwright Chromium Headless Shell。正式发布检查在标签任务中完整执行。
 
-- npm 下载缓存由默认分支任务准备，标签任务可以恢复。
+- npm 下载使用 Actions 缓存，缓存是否可用以任务日志为准。
 - Rust 缓存使用固定提交的 `Swatinem/rust-cache`。工作区为 `src-tauri -> target`，缓存 Cargo 依赖和依赖编译产物。
-- Rust 检查使用 `windows-2022-check-v1`，Release 编译使用 `windows-2022-release-v1`。CI 与发布的用途、运行环境和工具链一致。
-- 缓存 Action 在共享键中加入工具链、编译环境和依赖配置，依赖变化时可恢复已有依赖缓存。应用自身和增量编译产物按 Action 默认规则排除。
-- 仅默认分支成功任务保存 Rust 缓存，标签任务只恢复。不同标签的缓存相互隔离，标签可恢复默认分支缓存。
-- 缓存命中后仍执行完整检查和构建；缓存缺失时重新下载依赖并编译。
-
-版本发布前等待 `main` CI 的 Rust 检查和 Release 编译成功，可使标签任务使用已有缓存。首次 CI、工具链变化、依赖变化或缓存过期时，编译耗时可能增加。缓存命中和耗时以 Actions 日志为依据。
+- Rust 检查使用 `windows-2022-check-v1`，Release 编译使用 `windows-2022-release-v1`。标签任务仅恢复可用 Rust 缓存，当前工作流不保存新的 Rust 缓存。已有缓存失效后需要重新编译。
+- 缓存命中后仍执行完整检查和构建；缓存缺失时重新下载依赖并编译。实际缓存命中和耗时以 Actions 日志为依据。
 
 ### 发布附件
 
@@ -238,4 +244,4 @@ Get-FileHash 'src-tauri/target/release-assets/v0.2.0/key-relay_0.2.0_x64-setup.e
 
 正式签名密钥、Actions Secrets 和公钥变量待配置。实际 A→B 升级、安装失败资源恢复、0.1.0 手动升级及公开 GitHub 通道待隔离 Windows 环境验收。Change 010 保持 `accepted`。
 
-CI 与并行发布配置已通过本地 Actions 静态检查，发布脚本测试和 Headless Shell 浏览器测试通过。Tauri `--no-bundle` 命令在本地 stable 工具链下完成 Release 编译并跳过安装包与签名。Rust 1.91.1 的 CI 执行、默认分支缓存保存、标签缓存恢复、检查失败时跳过草稿及实际耗时需要 GitHub 托管环境验证。Change 011 保持 `accepted`。
+并行发布配置已通过本地 Actions 静态检查，发布脚本测试和 Headless Shell 浏览器测试通过。Tauri `--no-bundle` 命令在本地 stable 工具链下完成 Release 编译并跳过安装包与签名。标签任务的缓存恢复、检查失败时跳过草稿及实际耗时需要 GitHub 托管环境验证。Change 011 保持 `accepted`。
