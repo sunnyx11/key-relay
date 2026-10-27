@@ -41,7 +41,7 @@ Spec 根目录为 `docs/`，导航入口为 `docs/index.md`。需求确认与兼
 - 首版使用 React 自带状态管理，应用范围包含本地桌面界面和 Rust 原生逻辑。
 - 支持 Windows 10／11 x64，默认普通权限；采用自定义标题栏。
 - 使用当前用户 NSIS 安装程序，缺少 WebView2 时联网安装运行时。
-- 仓库内 Spec 维护脚本通过 Node.js 执行；前端开发与构建也需要 Node.js。Rust 原生代码使用 Rust 工具链构建。
+- 仓库内 Spec 维护脚本、前端开发与构建使用 Node.js；版本要求见[版本发布](../release.md#构建与附件)。Rust 原生代码使用 Rust 工具链构建。
 - 系统输入、任务调度及通信约束见[领域设计](../domains/text-input/design.md#技术决策与约束)。
 
 ## 已知限制

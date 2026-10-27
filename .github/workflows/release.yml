@@ -24,7 +24,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
-          node-version: '24'
+          node-version: '22.22.2'
           cache: npm
       - name: Validate version and changelog
         run: node scripts/release.mjs check "$env:RELEASE_TAG"
@@ -92,7 +92,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
-          node-version: '24'
+          node-version: '22.22.2'
           cache: npm
       - name: Validate version and changelog
         run: node scripts/release.mjs check "$env:RELEASE_TAG"

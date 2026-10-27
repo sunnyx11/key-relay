@@ -30,7 +30,7 @@ Key Relay 是 Windows 文本自动输入工具，可将准备好的文本作为�
 
 ## 开发
 
-需要 Windows x64、Node.js 24、Rust 1.91.1 或更高版本、Visual Studio C++ 生成工具、Windows SDK 和 WebView2。
+需要 Windows x64、Node.js 22.22.2 及以上的 22.x 版本、24.x 版本或 26.0.0 及以上版本、Rust 1.91.1 或更高版本、Visual Studio C++ 生成工具、Windows SDK 和 WebView2。
 
 ```bash
 npm ci

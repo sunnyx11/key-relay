@@ -21,7 +21,7 @@ Windows 程序和 NSIS 安装包通过本地命令构建。仓库没有 GitHub A
 - 推送 `v*` 标签触发发布任务。有效版本采用 `vX.Y.Z`，可包含 SemVer 预发布后缀；预发布版本的草稿标记为 prerelease。
 - 标签必须与 npm、Cargo、Tauri 配置及 npm、Cargo 锁文件中的项目版本一致。
 - CHANGELOG.md 采用 Keep a Changelog 格式，保留 Unreleased。发布说明来自与标签对应的唯一版本条目，要求有效日期和实际变更内容；版本缺失、重复或内容为空时停止。
-- Windows x64 构建环境安装 Node.js 24 和 Rust 1.91.1。组件、发布脚本、Rust、浏览器测试及代码、规范检查通过后生成 NSIS 安装包。
+- Windows x64 构建环境安装 Node.js 22.22.2 和 Rust 1.91.1。组件、发布脚本、Rust、浏览器测试及代码、规范检查通过后生成 NSIS 安装包。
 - 附件包含 NSIS 安装包、独立 key-relay.exe 和 SHA256SUMS.txt。独立 EXE 使用系统 WebView2。
 - 构建任务只读仓库；独立发布任务使用 GITHUB_TOKEN 的 contents: write 权限创建草稿。Actions 引用固定提交。
 - 同标签任务串行执行。首次成功运行创建草稿，重复运行更新草稿说明及同名附件；已公开 Release 阻止自动修改。
