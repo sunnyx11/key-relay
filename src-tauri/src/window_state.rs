@@ -252,6 +252,37 @@ fn capture(window: &WebviewWindow) -> Result<Geometry, String> {
     }
 }
 
+/// Move the normal window to the center of the primary work area, retaining its logical size.
+pub(crate) fn reset_position(window: &WebviewWindow) -> Result<(), String> {
+    let geometry = capture(window)?;
+    let primary = window
+        .primary_monitor()
+        .map_err(|error| error.to_string())?
+        .ok_or("无法读取主屏幕。")?;
+    let work = primary.work_area();
+    let width = (geometry.width * primary.scale_factor()).round() as u32;
+    let height = (geometry.height * primary.scale_factor()).round() as u32;
+    let x = i64::from(work.position.x) + (i64::from(work.size.width) - i64::from(width)) / 2;
+    let y = i64::from(work.position.y) + (i64::from(work.size.height) - i64::from(height)) / 2;
+    if window.is_maximized().map_err(|error| error.to_string())? {
+        window.unmaximize().map_err(|error| error.to_string())?;
+    }
+    if window.is_minimized().map_err(|error| error.to_string())? {
+        window.unminimize().map_err(|error| error.to_string())?;
+    }
+    let position = PhysicalPosition::new(x as i32, y as i32);
+    window
+        .set_position(position)
+        .map_err(|error| error.to_string())?;
+    window
+        .set_size(PhysicalSize::new(width, height))
+        .map_err(|error| error.to_string())?;
+    window
+        .set_position(position)
+        .map_err(|error| error.to_string())?;
+    Ok(())
+}
+
 /// Best-effort geometry persistence before normal exit or installer takeover.
 pub(crate) fn save(app: &AppHandle) {
     if let Some(window) = app.get_webview_window("main") {

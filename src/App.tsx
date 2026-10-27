@@ -129,7 +129,7 @@ export default function App() {
   };
   return <main className="window">
     <TitleBar disabled={busy || relay.pending || !relay.ready} onError={report} />
-    {relay.closeError && <div className="storage-notice" role="alert">{relay.closeError} 请再次关闭窗口以重试。</div>}
+    {relay.closeError && <div className="storage-notice" role="alert">{relay.closeError} 请从通知区域选择退出应用以重试。</div>}
     {(!relay.ready || relay.archive.error) && <div className="storage-notice" role={relay.loadError || relay.archive.error ? 'alert' : 'status'}>
       <span>{relay.loadError || relay.archive.error || '正在恢复上次内容…'}</span>
       {relay.loadError ? <button className="button" onClick={relay.retryLoad}>重试读取</button> : relay.archive.error && <button className="button" disabled={historyDisabled} onClick={() => { void relay.changeArchive({ kind: 'retry' }); }}>重试保存</button>}

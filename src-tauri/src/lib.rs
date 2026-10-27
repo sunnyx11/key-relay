@@ -9,7 +9,98 @@ mod updates;
 mod window_state;
 pub mod windows;
 
-use tauri::{Emitter, Manager};
+use tauri::{
+    menu::{Menu, MenuItem},
+    tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
+    Emitter, Manager,
+};
+
+fn show_main_window(app: &tauri::AppHandle) {
+    if let Some(window) = app.get_webview_window("main") {
+        let result = (|| -> tauri::Result<()> {
+            if window.is_minimized()? {
+                window.unminimize()?;
+            }
+            window.show()?;
+            window.set_focus()
+        })();
+        if let Err(error) = result {
+            eprintln!("打开窗口失败：{error}");
+        }
+    }
+}
+
+fn show_exit_error(app: &tauri::AppHandle, error: &str) {
+    use ::windows::{
+        core::PCWSTR,
+        Win32::UI::WindowsAndMessaging::{MessageBoxW, MB_ICONERROR, MB_OK},
+    };
+    show_main_window(app);
+    let message: Vec<u16> = format!("退出应用失败：{error}\n请从通知区域选择退出应用以重试。")
+        .encode_utf16()
+        .chain(Some(0))
+        .collect();
+    let title: Vec<u16> = "Key Relay".encode_utf16().chain(Some(0)).collect();
+    unsafe {
+        MessageBoxW(
+            None,
+            PCWSTR(message.as_ptr()),
+            PCWSTR(title.as_ptr()),
+            MB_OK | MB_ICONERROR,
+        );
+    }
+}
+
+fn request_exit(app: &tauri::AppHandle) {
+    if app.state::<updates::Updates>().installing() {
+        return;
+    }
+    let Some(window) = app.get_webview_window("main") else {
+        return;
+    };
+    let runtime = app.state::<commands::Runtime>();
+    if runtime
+        .editor_ready
+        .load(std::sync::atomic::Ordering::SeqCst)
+    {
+        let (reply, _) = std::sync::mpsc::channel();
+        if let Err(error) = runtime.sender.send(commands::Message::Cancel(reply)) {
+            show_exit_error(app, &error.to_string());
+            return;
+        }
+        if let Err(error) = window.emit("relay-close-requested", ()) {
+            show_exit_error(app, &error.to_string());
+        }
+    } else {
+        runtime.shutdown(app.clone());
+    }
+}
+
+fn tray_icon(icon: &tauri::image::Image<'_>) -> tauri::image::Image<'static> {
+    let width = icon.width() as usize;
+    let height = icon.height() as usize;
+    let mut margin = width.min(height) / 2;
+    let mut visible = false;
+    for (index, pixel) in icon.rgba().chunks_exact(4).enumerate() {
+        if pixel[3] != 0 {
+            let x = index % width;
+            let y = index / width;
+            margin = margin.min(x).min(y).min(width - 1 - x).min(height - 1 - y);
+            visible = true;
+        }
+    }
+    if !visible || margin == 0 {
+        return icon.clone().to_owned();
+    }
+    let cropped_width = width - 2 * margin;
+    let cropped_height = height - 2 * margin;
+    let mut rgba = Vec::with_capacity(cropped_width * cropped_height * 4);
+    for y in margin..height - margin {
+        let start = (y * width + margin) * 4;
+        rgba.extend_from_slice(&icon.rgba()[start..start + cropped_width * 4]);
+    }
+    tauri::image::Image::new_owned(rgba, cropped_width as u32, cropped_height as u32)
+}
 
 fn data_directory(
     home: tauri::Result<std::path::PathBuf>,
@@ -25,13 +116,7 @@ fn data_directory(
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _, _| {
-            if let Some(window) = app.get_webview_window("main") {
-                if window.is_minimized().unwrap_or(false) {
-                    let _ = window.unminimize();
-                }
-                let _ = window.show();
-                let _ = window.set_focus();
-            }
+            show_main_window(app);
         }))
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_opener::init())
@@ -57,6 +142,42 @@ pub fn run() {
                 archive,
             ));
             app.manage(updates::Updates::new(directory.join("updates.json")));
+            let open = MenuItem::with_id(app, "open", "打开窗口", true, None::<&str>)?;
+            let reset = MenuItem::with_id(app, "reset", "重置位置", true, None::<&str>)?;
+            let quit = MenuItem::with_id(app, "quit", "退出应用", true, None::<&str>)?;
+            let menu = Menu::with_items(app, &[&open, &reset, &quit])?;
+            let icon = app
+                .default_window_icon()
+                .ok_or_else(|| std::io::Error::other("应用图标不可用"))?;
+            TrayIconBuilder::new()
+                .icon(tray_icon(icon))
+                .tooltip("Key Relay")
+                .menu(&menu)
+                .show_menu_on_left_click(false)
+                .on_menu_event(|app, event| match event.id().as_ref() {
+                    "open" => show_main_window(app),
+                    "reset" => {
+                        if let Some(window) = app.get_webview_window("main") {
+                            if let Err(error) = window_state::reset_position(&window) {
+                                eprintln!("重置窗口位置失败：{error}");
+                            }
+                            show_main_window(app);
+                        }
+                    }
+                    "quit" => request_exit(app),
+                    _ => {}
+                })
+                .on_tray_icon_event(|tray, event| {
+                    if let TrayIconEvent::Click {
+                        button: MouseButton::Left,
+                        button_state: MouseButtonState::Up,
+                        ..
+                    } = event
+                    {
+                        show_main_window(tray.app_handle());
+                    }
+                })
+                .build(app)?;
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -81,16 +202,8 @@ pub fn run() {
                 if window.state::<updates::Updates>().installing() {
                     return;
                 }
-                let runtime = window.state::<commands::Runtime>();
-                if runtime
-                    .editor_ready
-                    .load(std::sync::atomic::Ordering::SeqCst)
-                {
-                    let (reply, _) = std::sync::mpsc::channel();
-                    let _ = runtime.sender.send(commands::Message::Cancel(reply));
-                    let _ = window.emit("relay-close-requested", ());
-                } else {
-                    runtime.shutdown(window.app_handle().clone());
+                if let Err(error) = window.hide() {
+                    eprintln!("隐藏窗口失败：{error}");
                 }
             }
         })
@@ -101,6 +214,38 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn tray_icon_removes_symmetric_transparent_margin() {
+        let mut rgba = vec![0; 6 * 6 * 4];
+        for y in 1..5 {
+            for x in 1..5 {
+                let offset = (y * 6 + x) * 4;
+                rgba[offset..offset + 4].copy_from_slice(&[50, 103, 152, 128]);
+            }
+        }
+        let icon = tauri::image::Image::new_owned(rgba.clone(), 6, 6);
+        let tray_icon = super::tray_icon(&icon);
+
+        assert_eq!((tray_icon.width(), tray_icon.height()), (4, 4));
+        assert_eq!(tray_icon.rgba(), [50, 103, 152, 128].repeat(16));
+        assert_eq!(icon.rgba(), rgba);
+    }
+
+    #[test]
+    fn tray_icon_preserves_transparent_and_asymmetric_images() {
+        let transparent = tauri::image::Image::new_owned(vec![0; 4 * 4 * 4], 4, 4);
+        let tray_icon = super::tray_icon(&transparent);
+        assert_eq!((tray_icon.width(), tray_icon.height()), (4, 4));
+        assert_eq!(tray_icon.rgba(), transparent.rgba());
+
+        let mut rgba = vec![0; 4 * 4 * 4];
+        rgba[19] = 1;
+        let asymmetric = tauri::image::Image::new_owned(rgba, 4, 4);
+        let tray_icon = super::tray_icon(&asymmetric);
+        assert_eq!((tray_icon.width(), tray_icon.height()), (4, 4));
+        assert_eq!(tray_icon.rgba(), asymmetric.rgba());
+    }
 
     #[test]
     fn normal_storage_uses_the_hidden_home_directory() {

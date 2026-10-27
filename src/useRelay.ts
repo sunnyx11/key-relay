@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { getCurrentWindow } from '@tauri-apps/api/window';
 import { archiveBridge, bridge, defaults, type Draft, type DraftSettings, type Settings, type Snapshot, type TextAction, type TextState } from './bridge';
 
 const initial: Snapshot = { sequence: 0, phase: 'idle', sent: 0, total: 0, target: null, message: '', settings: defaults, shortcutError: null };
@@ -57,6 +58,7 @@ export function useRelay() {
       });
     } catch (error) {
       report(error); closing.current = false;
+      void getCurrentWindow().show().catch(report);
       if (alive.current) { setClosePending(false); setCloseError(String(error)); }
     }
   }, [accept, acceptArchive, enqueue, report]);

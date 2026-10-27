@@ -317,15 +317,17 @@ impl Runtime {
             return;
         }
         let sender = self.sender.clone();
-        thread::spawn(move || {
-            if shutdown_worker(sender).is_ok() {
+        thread::spawn(move || match shutdown_worker(sender) {
+            Ok(()) => {
                 crate::window_state::save(&app);
                 app.exit(0);
-            } else {
+            }
+            Err(error) => {
                 use tauri::Manager;
                 app.state::<Runtime>()
                     .closing
                     .store(false, Ordering::SeqCst);
+                crate::show_exit_error(&app, &error);
             }
         });
     }

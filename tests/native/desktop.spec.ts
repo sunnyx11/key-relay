@@ -1,4 +1,4 @@
-import { test, expect, chromium, type Browser } from '@playwright/test';
+import { test, expect, chromium, type Browser, type Page } from '@playwright/test';
 import { once } from 'node:events';
 import { execFileSync, spawn } from 'node:child_process';
 import { resolve, join } from 'node:path';
@@ -13,6 +13,10 @@ test.beforeAll(() => {
 });
 test.afterAll(() => { rmSync(configDir, { recursive: true, force: true }); });
 test.beforeEach(() => { rmSync(join(configDir, 'window-state.json'), { force: true }); });
+
+async function requestExit(page: Page) {
+  await page.evaluate(() => (window as unknown as { __TAURI_INTERNALS__: { invoke: (command: string, args: unknown) => Promise<void> } }).__TAURI_INTERNALS__.invoke('plugin:event|emit', { event: 'relay-close-requested', payload: null }));
+}
 
 test('duplicate launch restores the existing window and keeps its session', async () => {
   const executable = resolve(process.env.KEY_RELAY_TEST_EXECUTABLE || 'src-tauri/target/release/key-relay.exe');
@@ -54,6 +58,14 @@ test('duplicate launch restores the existing window and keeps its session', asyn
     await page.locator('#input-tab').click();
     await expect(page.locator('#source')).toHaveValue('原窗口中的最新编辑');
     await page.getByRole('button', { name: '关闭' }).click();
+    const isVisible = () => page.evaluate(() => (window as unknown as { __TAURI_INTERNALS__: { invoke: (command: string, args: unknown) => Promise<boolean> } }).__TAURI_INTERNALS__.invoke('plugin:window|is_visible', { label: 'main' }));
+    await expect.poll(isVisible).toBe(false);
+    expect(first.exitCode).toBeNull();
+    const third = spawn(executable, [], { env: { ...env, WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: '--remote-debugging-port=9231' }, stdio: 'ignore' }); children.push(third);
+    await expect.poll(() => third.exitCode, { timeout: 5_000 }).toBe(0);
+    await expect.poll(isVisible).toBe(true);
+    await expect(page.locator('#source')).toHaveValue('原窗口中的最新编辑');
+    await requestExit(page);
     await expect.poll(() => first.exitCode, { timeout: 10_000 }).toBe(0);
     await browser.close(); browser = undefined;
     await expect.poll(async () => { try { return (await fetch('http://127.0.0.1:9229/json/version')).ok; } catch { return false; } }, { timeout: 25_000 }).toBe(false);
@@ -77,7 +89,7 @@ test('duplicate launch restores the existing window and keeps its session', asyn
     await restored.getByRole('button', { name: '确认' }).click();
     await expect(restored.locator('.history-entry')).toHaveCount(0);
     await expect(restored.getByRole('button', { name: '撤销删除' })).toHaveCount(0);
-    await restored.getByRole('button', { name: '关闭' }).click();
+    await requestExit(restored);
     await expect.poll(() => reopened.exitCode, { timeout: 10_000 }).toBe(0);
   } finally {
     for (const child of children) if (child.exitCode === null) { const exited = once(child, 'exit'); child.kill(); await exited; }
@@ -245,7 +257,7 @@ test(`packaged WebView2 window, pin and cleanup (${session} session)`, async () 
     await expect(page.getByRole('button', { name: '取消置顶' })).toHaveAttribute('aria-pressed', 'true');
     console.log('Native viewport', await page.evaluate(() => ({ width: innerWidth, height: innerHeight, scale: devicePixelRatio })));
     await page.screenshot({ path: 'test-results/native-window.png' });
-    await page.getByRole('button', { name: '关闭' }).click();
+    await requestExit(page);
     await expect.poll(() => child.exitCode, { timeout: 10_000 }).toBe(0);
     expect(errors).toEqual([]);
     await browser.close();

@@ -155,10 +155,12 @@ describe('editor and native task integration', () => {
   });
   it('keeps editing available after close persistence fails and closes after retry', async () => {
     await mount();
+    sizingWindow.show.mockClear();
     fireEvent.click(screen.getByRole('tab', { name: '设置' }));
     vi.mocked(archiveBridge.flush).mockRejectedValueOnce('内容暂未保存，关闭后可能丢失。');
     act(() => closeNotify());
     await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('内容暂未保存'));
+    expect(sizingWindow.show).toHaveBeenCalledOnce();
     expect(bridge.close).not.toHaveBeenCalled();
     expect(document.getElementById('source')).not.toHaveAttribute('readonly');
     act(() => closeNotify());

@@ -24,6 +24,7 @@ use windows::{
 struct App {
     child: Child,
     window: HWND,
+    debug_port: u16,
 }
 impl App {
     fn open(directory: &std::path::Path) -> Self {
@@ -32,14 +33,22 @@ impl App {
             .unwrap_or_else(|| {
                 PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("target/release/key-relay.exe")
             });
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let debug_port = listener.local_addr().unwrap().port();
+        drop(listener);
         let child = Command::new(executable)
             .env("KEY_RELAY_TEST_CONFIG_DIR", directory)
             .env("WEBVIEW2_USER_DATA_FOLDER", directory.join("webview"))
+            .env(
+                "WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS",
+                format!("--remote-debugging-port={debug_port}"),
+            )
             .spawn()
             .unwrap();
         let mut app = Self {
             child,
             window: HWND::default(),
+            debug_port,
         };
         let deadline = Instant::now() + Duration::from_secs(20);
         while app.window.is_invalid() && Instant::now() < deadline {
@@ -71,15 +80,24 @@ impl App {
         (outer, client)
     }
     fn close(mut self) {
-        unsafe {
-            PostMessageW(
-                Some(self.window),
-                WM_CLOSE,
-                Default::default(),
-                Default::default(),
-            )
+        let status = Command::new("node")
+            .current_dir(PathBuf::from(env!("CARGO_MANIFEST_DIR")).parent().unwrap())
+            .args(["-e", r#"
+                const { chromium } = require('@playwright/test');
+                (async () => {
+                    const browser = await chromium.connectOverCDP(`http://127.0.0.1:${process.env.RELAY_DEBUG_PORT}`);
+                    const page = browser.contexts()[0].pages()[0];
+                    await page.evaluate(() => window.__TAURI_INTERNALS__.invoke('plugin:event|emit', { event: 'relay-close-requested', payload: null })).catch(() => {});
+                    await browser.close().catch(() => {});
+                })().catch(error => { console.error(error); process.exitCode = 1; });
+            "#])
+            .env("RELAY_DEBUG_PORT", self.debug_port.to_string())
+            .status()
             .unwrap();
-        }
+        assert!(
+            status.success(),
+            "could not request normal application exit"
+        );
         let deadline = Instant::now() + Duration::from_secs(15);
         loop {
             if let Some(status) = self.child.try_wait().unwrap() {
@@ -145,6 +163,23 @@ fn restores_normal_geometry_after_close_maximize_minimize_and_invalid_records() 
         .unwrap();
     }
     let expected = app.geometry();
+    unsafe {
+        PostMessageW(
+            Some(app.window),
+            WM_CLOSE,
+            Default::default(),
+            Default::default(),
+        )
+        .unwrap();
+    }
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while unsafe { IsWindowVisible(app.window).as_bool() } && Instant::now() < deadline {
+        thread::sleep(Duration::from_millis(50));
+    }
+    assert!(
+        !unsafe { IsWindowVisible(app.window).as_bool() },
+        "close must hide the window"
+    );
     unsafe {
         let _ = ShowWindow(app.window, SW_MINIMIZE);
     }
