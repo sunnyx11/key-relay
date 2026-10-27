@@ -1,7 +1,7 @@
 ---
-status: accepted
+status: completed
 created_at: 2026-10-04 00:24:28
-completed_at:
+completed_at: 2026-10-27 17:03:44
 ---
 
 # 本地日常验证与并行发布

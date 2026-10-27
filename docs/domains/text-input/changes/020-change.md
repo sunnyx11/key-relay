@@ -1,7 +1,7 @@
 ---
-status: accepted
+status: completed
 created_at: 2026-10-25 23:18:02
-completed_at:
+completed_at: 2026-10-27 17:03:44
 ---
 
 # 启动草稿恢复与历史输入记录

@@ -1,7 +1,7 @@
 ---
-status: accepted
+status: completed
 created_at: 2026-10-27 11:25:23
-completed_at:
+completed_at: 2026-10-27 17:03:44
 ---
 
 # 发布独立程序附件包含版本号

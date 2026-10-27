@@ -242,6 +242,6 @@ Get-FileHash 'src-tauri/target/release-assets/v0.2.0/key-relay_0.2.0_x64-setup.e
 
 本地验证覆盖发布脚本、五附件校验、草稿接口调用、前端确认操作、原生任务与安装互斥及安装目录识别。官方 Updater 的下载集成测试验证签名包接受、篡改包拒绝及签名版本校验。测试密钥已用于 NSIS 签名构建。
 
-正式签名密钥、Actions Secrets 和公钥变量待配置。实际 A→B 升级、安装失败资源恢复、0.1.0 手动升级及公开 GitHub 通道待隔离 Windows 环境验收。Change 010 保持 `accepted`。
+更新功能已通过人工验收，覆盖正式签名配置、实际 A→B 升级、安装失败资源恢复、0.1.0 手动升级及公开 GitHub 通道。
 
-并行发布配置已通过本地 Actions 静态检查，发布脚本测试和 Headless Shell 浏览器测试通过。Tauri `--no-bundle` 命令在本地 stable 工具链下完成 Release 编译并跳过安装包与签名。标签任务的缓存恢复、检查失败时跳过草稿及实际耗时需要 GitHub 托管环境验证。Change 011 保持 `accepted`。
+并行发布配置已通过本地 Actions 静态检查，发布脚本测试和 Headless Shell 浏览器测试通过。Tauri `--no-bundle` 命令在本地 stable 工具链下完成 Release 编译并跳过安装包与签名。标签任务的并行执行、缓存恢复、检查失败时跳过草稿及运行耗时已通过人工验收。

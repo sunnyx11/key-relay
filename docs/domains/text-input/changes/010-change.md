@@ -1,7 +1,7 @@
 ---
-status: accepted
+status: completed
 created_at: 2026-10-03 23:59:28
-completed_at:
+completed_at: 2026-10-27 17:03:44
 ---
 
 # 应用更新检查与确认安装
