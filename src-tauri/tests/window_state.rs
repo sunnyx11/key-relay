@@ -126,7 +126,12 @@ fn restores_normal_geometry_after_close_maximize_minimize_and_invalid_records() 
     )
     .unwrap();
     let app = App::open(directory.path());
-    let (initial, _) = app.geometry();
+    let (initial, initial_client) = app.geometry();
+    assert_eq!(
+        (initial.right - initial.left, initial.bottom - initial.top),
+        (initial_client.right, initial_client.bottom),
+        "the undecorated window must not add a native shadow frame"
+    );
     unsafe {
         SetWindowPos(
             app.window,

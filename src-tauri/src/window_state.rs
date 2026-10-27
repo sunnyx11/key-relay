@@ -11,12 +11,11 @@ use windows::{
         Storage::FileSystem::{MoveFileExW, MOVEFILE_REPLACE_EXISTING, MOVEFILE_WRITE_THROUGH},
         UI::{
             HiDpi::{
-                GetDpiForWindow, GetSystemMetricsForDpi, SetThreadDpiAwarenessContext,
+                GetDpiForWindow, SetThreadDpiAwarenessContext,
                 DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2,
             },
             WindowsAndMessaging::{
-                GetWindowLongW, GetWindowPlacement, GWL_EXSTYLE, SM_CXPADDEDBORDER, SM_CXSIZEFRAME,
-                WINDOWPLACEMENT, WS_EX_TOOLWINDOW,
+                GetWindowLongW, GetWindowPlacement, GWL_EXSTYLE, WINDOWPLACEMENT, WS_EX_TOOLWINDOW,
             },
         },
     },
@@ -54,7 +53,6 @@ struct WorkArea {
     width: u32,
     height: u32,
     scale: f64,
-    frame: (u32, u32),
 }
 #[derive(Debug, PartialEq)]
 struct Placement {
@@ -68,8 +66,8 @@ fn placement(saved: Option<Geometry>, areas: &[WorkArea], primary: WorkArea) -> 
     let saved = saved.filter(|geometry| geometry.valid());
     if let Some(geometry) = saved {
         for area in areas {
-            let width = (geometry.width * area.scale).round() + f64::from(area.frame.0);
-            let height = (geometry.height * area.scale).round() + f64::from(area.frame.1);
+            let width = (geometry.width * area.scale).round();
+            let height = (geometry.height * area.scale).round();
             if geometry.x >= area.x
                 && geometry.y >= area.y
                 && f64::from(geometry.x) + width <= f64::from(area.x) + f64::from(area.width)
@@ -92,54 +90,27 @@ fn placement(saved: Option<Geometry>, areas: &[WorkArea], primary: WorkArea) -> 
     });
     let width = (geometry.width * primary.scale)
         .round()
-        .min(f64::from(primary.width.saturating_sub(primary.frame.0)))
+        .min(f64::from(primary.width))
         .max((320.0 * primary.scale).round()) as u32;
     let height = (geometry.height * primary.scale)
         .round()
-        .min(f64::from(primary.height.saturating_sub(primary.frame.1)))
+        .min(f64::from(primary.height))
         .max((340.0 * primary.scale).round()) as u32;
     Placement {
-        x: primary.x
-            + (primary
-                .width
-                .saturating_sub(width.saturating_add(primary.frame.0))
-                / 2) as i32,
-        y: primary.y
-            + (primary
-                .height
-                .saturating_sub(height.saturating_add(primary.frame.1))
-                / 2) as i32,
+        x: primary.x + (primary.width.saturating_sub(width) / 2) as i32,
+        y: primary.y + (primary.height.saturating_sub(height) / 2) as i32,
         width,
         height,
     }
 }
 
-fn native_frame(dpi: u32, top_border: bool) -> (u32, u32) {
-    let edge = unsafe {
-        GetSystemMetricsForDpi(SM_CXSIZEFRAME, dpi) + GetSystemMetricsForDpi(SM_CXPADDEDBORDER, dpi)
-    } as u32;
-    // Tao's undecorated shadow frame has side/bottom resize insets and a DPI-rounded top inset on Windows 11.
-    (
-        edge * 2,
-        edge + if top_border {
-            (f64::from(dpi) / 96.0).round() as u32
-        } else {
-            0
-        },
-    )
-}
-
 /// Own the independent window geometry file in the application data directory.
 pub(crate) struct Store {
     path: PathBuf,
-    top_border: bool,
 }
 impl Store {
     pub(crate) fn new(path: PathBuf) -> Self {
-        Self {
-            path,
-            top_border: false,
-        }
+        Self { path }
     }
 
     fn load(&self) -> Result<Option<Geometry>, String> {
@@ -174,10 +145,6 @@ impl Store {
             )
             .map_err(|error| tauri::Error::Io(std::io::Error::other(error.to_string())))?;
         }
-        let outer = window.outer_size()?;
-        let inner = window.inner_size()?;
-        self.top_border =
-            outer.height.saturating_sub(inner.height) > outer.width.saturating_sub(inner.width) / 2;
         let saved = self.load().unwrap_or_else(|error| {
             eprintln!("{error}");
             None
@@ -197,10 +164,6 @@ impl Store {
                 width: work.size.width,
                 height: work.size.height,
                 scale: monitor.scale_factor(),
-                frame: native_frame(
-                    (monitor.scale_factor() * 96.0).round() as u32,
-                    self.top_border,
-                ),
             }
         };
         let areas: Vec<_> = monitors.iter().map(area).collect();
@@ -240,7 +203,7 @@ impl Store {
     }
 }
 
-fn capture(window: &WebviewWindow, top_border: bool) -> Result<Geometry, String> {
+fn capture(window: &WebviewWindow) -> Result<Geometry, String> {
     let handle = window.hwnd().map_err(|error| error.to_string())?;
     let handle = HWND(handle.0);
     unsafe {
@@ -274,14 +237,11 @@ fn capture(window: &WebviewWindow, top_border: bool) -> Result<Geometry, String>
                 rect.right += monitor.rcWork.left - monitor.rcMonitor.left;
                 rect.bottom += monitor.rcWork.top - monitor.rcMonitor.top;
             }
-            let frame = native_frame(dpi, top_border);
             Ok(Geometry::from_physical(
                 rect.left,
                 rect.top,
-                ((i64::from(rect.right) - i64::from(rect.left)).max(0) as u32)
-                    .saturating_sub(frame.0),
-                ((i64::from(rect.bottom) - i64::from(rect.top)).max(0) as u32)
-                    .saturating_sub(frame.1),
+                (i64::from(rect.right) - i64::from(rect.left)).max(0) as u32,
+                (i64::from(rect.bottom) - i64::from(rect.top)).max(0) as u32,
                 scale,
             ))
         })();
@@ -296,9 +256,7 @@ fn capture(window: &WebviewWindow, top_border: bool) -> Result<Geometry, String>
 pub(crate) fn save(app: &AppHandle) {
     if let Some(window) = app.get_webview_window("main") {
         let store = app.state::<Store>();
-        if let Err(error) =
-            capture(&window, store.top_border).and_then(|geometry| store.write(geometry))
-        {
+        if let Err(error) = capture(&window).and_then(|geometry| store.write(geometry)) {
             eprintln!("{error}");
         }
     }
@@ -314,7 +272,6 @@ mod tests {
             width: 1920,
             height: 1000,
             scale: 1.0,
-            frame: (0, 0),
         }
     }
     #[test]
@@ -449,46 +406,35 @@ mod tests {
         );
     }
     #[test]
-    fn checks_and_centers_the_entire_native_frame() {
-        let area = WorkArea {
-            frame: (16, 8),
-            ..primary()
-        };
+    fn restores_geometry_touching_work_area_edges() {
+        let area = primary();
         let saved = Geometry {
             x: 1320,
-            y: 100,
+            y: 590,
             width: 600.0,
             height: 450.0,
         };
         assert_eq!(
             placement(Some(saved), &[area], area),
             Placement {
-                x: 652,
-                y: 311,
+                x: 1320,
+                y: 590,
                 width: 600,
                 height: 450
             }
         );
         assert_eq!(
-            placement(
-                Some(Geometry {
-                    width: 3000.0,
-                    height: 2000.0,
-                    ..saved
-                }),
-                &[area],
-                area
-            ),
+            placement(Some(Geometry { x: 1321, ..saved }), &[area], area),
             Placement {
-                x: 0,
-                y: 40,
-                width: 1904,
-                height: 992
+                x: 660,
+                y: 315,
+                width: 600,
+                height: 450
             }
         );
     }
     #[test]
-    fn fractional_dpi_minimum_sizes_round_trip_and_top_insets_follow_each_dpi() {
+    fn fractional_dpi_minimum_sizes_round_trip() {
         for dpi in [96, 106, 120, 144, 168, 192] {
             let scale = f64::from(dpi) / 96.0;
             let geometry = Geometry::from_physical(
@@ -499,11 +445,7 @@ mod tests {
                 scale,
             );
             assert!(geometry.valid());
-            let area = WorkArea {
-                scale,
-                frame: native_frame(dpi, true),
-                ..primary()
-            };
+            let area = WorkArea { scale, ..primary() };
             let restored = placement(Some(geometry), &[area], area);
             assert_eq!((restored.x, restored.y), (100, 120));
             assert_eq!(
@@ -514,8 +456,6 @@ mod tests {
                 )
             );
         }
-        assert_eq!(native_frame(96, true).1 - native_frame(96, false).1, 1);
-        assert_eq!(native_frame(144, true).1 - native_frame(144, false).1, 2);
     }
     #[test]
     fn missing_corrupt_and_invalid_records_are_distinct_from_valid_records() {

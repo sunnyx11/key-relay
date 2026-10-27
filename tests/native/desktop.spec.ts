@@ -56,6 +56,7 @@ test('duplicate launch restores the existing window and keeps its session', asyn
     await page.getByRole('button', { name: '关闭' }).click();
     await expect.poll(() => first.exitCode, { timeout: 10_000 }).toBe(0);
     await browser.close(); browser = undefined;
+    await expect.poll(async () => { try { return (await fetch('http://127.0.0.1:9229/json/version')).ok; } catch { return false; } }, { timeout: 25_000 }).toBe(false);
 
     const reopened = spawn(executable, [], { env, stdio: 'ignore' }); children.push(reopened);
     await expect.poll(async () => { try { return (await fetch('http://127.0.0.1:9229/json/version')).ok; } catch { return false; } }, { timeout: 25_000 }).toBe(true);
