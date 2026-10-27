@@ -4,6 +4,8 @@
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-10-27
+
 ### Added
 
 - 提供通知区域图标，支持打开窗口、保留尺寸重置位置及退出应用。
@@ -115,7 +117,8 @@
 - 提供当前用户安装包，缺少 WebView2 时联网安装运行时。
 - 提供 Windows x64 独立 EXE，使用系统 WebView2。
 
-[Unreleased]: https://github.com/sunnyx11/key-relay/compare/v0.5.1...HEAD
+[Unreleased]: https://github.com/sunnyx11/key-relay/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/sunnyx11/key-relay/releases/tag/v0.6.0
 [0.5.1]: https://github.com/sunnyx11/key-relay/releases/tag/v0.5.1
 [0.5.0]: https://github.com/sunnyx11/key-relay/releases/tag/v0.5.0
 [0.4.0]: https://github.com/sunnyx11/key-relay/releases/tag/v0.4.0
