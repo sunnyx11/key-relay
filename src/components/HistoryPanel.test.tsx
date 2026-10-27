@@ -49,6 +49,31 @@ describe('history viewing and restoration', () => {
     expect(entries.map(entry => entry.id)).toEqual([3, 1, 2]);
   });
 
+  it('numbers visible records continuously across groups and renumbers after filtering and archive updates', () => {
+    const now = new Date(2026, 9, 27, 12).getTime();
+    const entries = [
+      { id: 90, time: now, text: '今天匹配\n第二行', pinned: false },
+      { id: 20, time: now - 86400000, text: '昨天匹配', pinned: false },
+      { id: 5, time: now - 2 * 86400000, text: '置顶原文', pinned: true },
+    ];
+    const props = { hidden: false, busy: false, onRestore: vi.fn(), onChange: vi.fn() };
+    const { container, rerender } = render(<HistoryPanel {...props} archive={{ ...archive, entries }} />);
+    const previews = () => [...container.querySelectorAll('.history-preview')].map(el => el.textContent);
+    expect(previews()).toEqual(['1 置顶原文', '2 今天匹配 第二行', '3 昨天匹配']);
+    fireEvent.change(screen.getByRole('searchbox'), { target: { value: '匹配' } });
+    expect(previews()).toEqual(['1 今天匹配 第二行', '2 昨天匹配']);
+    fireEvent.change(screen.getByRole('searchbox'), { target: { value: '第二行' } });
+    expect(previews()).toEqual(['1 今天匹配 第二行']);
+    fireEvent.change(screen.getByRole('searchbox'), { target: { value: '没有匹配的内容' } });
+    expect(previews()).toEqual([]);
+    fireEvent.change(screen.getByRole('searchbox'), { target: { value: '' } });
+    rerender(<HistoryPanel {...props} archive={{ ...archive, entries: entries.map(entry => ({ ...entry, pinned: entry.id !== 5 })) }} />);
+    expect(previews()).toEqual(['1 今天匹配 第二行', '2 昨天匹配', '3 置顶原文']);
+    rerender(<HistoryPanel {...props} archive={{ ...archive, entries: entries.slice(1) }} />);
+    expect(previews()).toEqual(['1 置顶原文', '2 昨天匹配']);
+    expect(entries.map(entry => entry.id)).toEqual([90, 20, 5]);
+  });
+
   it('counts global clear scope and defaults to retaining pins even with a search', async () => {
     const entries = [
       { id: 1, time: 10, text: 'pinned', pinned: true },

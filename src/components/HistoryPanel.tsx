@@ -28,11 +28,11 @@ export function HistoryPanel({ hidden, busy, archive, onRestore, onChange }: {
   const deleteCount = archive.entries.length - retainedCount;
   const today = new Date(clock);
   const yesterday = new Date(clock); yesterday.setDate(yesterday.getDate() - 1);
-  const groups = new Map<string, HistoryEntry[]>();
-  for (const entry of entries) {
+  const groups = new Map<string, { entry: HistoryEntry; number: number }[]>();
+  for (const [index, entry] of entries.entries()) {
     const date = new Date(entry.time);
     const label = entry.pinned ? '置顶' : date.toDateString() === today.toDateString() ? '今天' : date.toDateString() === yesterday.toDateString() ? '昨天' : date.toLocaleDateString('zh-CN');
-    groups.set(label, [...(groups.get(label) || []), entry]);
+    groups.set(label, [...(groups.get(label) || []), { entry, number: index + 1 }]);
   }
   return <section className="panel history-panel" id="history-panel" role="tabpanel" aria-labelledby="history-tab" hidden={hidden} inert={hidden}>
     <div className="history-content">
@@ -53,9 +53,9 @@ export function HistoryPanel({ hidden, busy, archive, onRestore, onChange }: {
         {!entries.length && <div className="history-empty"><p>{query ? '没有找到匹配的记录。' : '暂无历史输入记录'}</p>{!query && <p>开始输入后，文本会保存在这里。</p>}</div>}
         {[...groups].map(([label, records]) => <section className="history-group" key={label} aria-label={label}>
           <h2>{label}</h2>
-          {records.map(entry => <article className="history-entry" key={entry.id} data-entry-id={entry.id}>
+          {records.map(({ entry, number }) => <article className="history-entry" key={entry.id} data-entry-id={entry.id}>
             <button className="history-view" disabled={busy} aria-label={`查看记录：${entry.text.slice(0, 80)}`} onClick={event => { viewButton.current = event.currentTarget; setConfirming(false); setViewed(entry); }}>
-              <span className="history-preview">{entry.text.replace(/[\r\n]+/g, ' ')}</span>
+              <span className="history-preview">{number}{' '}{entry.text.replace(/[\r\n]+/g, ' ')}</span>
             </button>
             <span className="history-meta"><time dateTime={new Date(entry.time).toISOString()}>{new Date(entry.time).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false })}</time></span>
             <div className="history-actions">

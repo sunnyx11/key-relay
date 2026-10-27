@@ -329,6 +329,8 @@ test('history rows and text preferences fit narrow widths and zoom without chang
       if (count) await expect(button).toBeEnabled();
       else await expect(button).toBeDisabled();
       if (count) {
+        expect(await page.locator('.history-preview').first().textContent()).toBe('1   记录 0 第二行😀 第三行');
+        expect(await page.locator('.history-preview').last().textContent()).toBe(`${count}   记录 ${count - 1} 第二行😀 第三行`);
         const entry = (await page.locator('.history-entry').first().boundingBox())!;
         expect(Math.abs(clearBox.x + clearBox.width - entry.x - entry.width), `${width}px/${zoom}/${count}: record right edge`).toBeLessThanOrEqual(1);
       }
