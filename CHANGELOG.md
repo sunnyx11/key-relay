@@ -4,6 +4,12 @@
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-10-27
+
+### Fixed
+
+- 修复主窗口四边边框显示不一致的问题。
+
 ## [0.5.0] - 2026-10-27
 
 ### Added
@@ -100,7 +106,8 @@
 - 提供当前用户安装包，缺少 WebView2 时联网安装运行时。
 - 提供 Windows x64 独立 EXE，使用系统 WebView2。
 
-[Unreleased]: https://github.com/sunnyx11/key-relay/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/sunnyx11/key-relay/compare/v0.5.1...HEAD
+[0.5.1]: https://github.com/sunnyx11/key-relay/releases/tag/v0.5.1
 [0.5.0]: https://github.com/sunnyx11/key-relay/releases/tag/v0.5.0
 [0.4.0]: https://github.com/sunnyx11/key-relay/releases/tag/v0.4.0
 [0.3.0]: https://github.com/sunnyx11/key-relay/releases/tag/v0.3.0
