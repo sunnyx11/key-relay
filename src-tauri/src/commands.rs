@@ -1,7 +1,6 @@
 use crate::{
     archive::{Archive, TextAction, TextState},
     settings::Settings,
-    shortcut,
     task::{Draft, Engine, Phase, Snapshot},
     windows::{
         hooks::{HookEvent, Hooks, Signals},
@@ -20,7 +19,6 @@ use std::{
     time::{Duration, Instant},
 };
 use tauri::{AppHandle, Emitter, State};
-use tauri_plugin_global_shortcut::GlobalShortcutExt;
 
 type Reply<T = Snapshot> = Sender<Result<T, String>>;
 /// Worker messages serialize all task mutations and persistence.
@@ -33,7 +31,6 @@ pub enum Message {
     TextRead(Reply<TextState>),
     TextAction(TextAction, Reply<TextState>),
     TextFlush(Reply<TextState>),
-    Shortcut { cycle: u64, key: u32 },
     Hook(HookEvent),
     Shutdown(Reply),
     PrepareUpdate(Reply),
@@ -67,8 +64,6 @@ impl Runtime {
                 engine.snapshot.phase = Phase::Failed;
                 engine.snapshot.message = error.clone();
             }
-            engine.snapshot.shortcut_error =
-                shortcut::register(&app, &engine.snapshot.settings.shortcut, signals.clone()).err();
             engine.snapshot.sequence = 1;
             let origin = Instant::now();
             let mut published = 0;
@@ -98,8 +93,8 @@ impl Runtime {
                         let result = if let Some(error) = &hook_error {
                             Err(error.clone())
                         } else {
-                            signals.stop.store(false, Ordering::SeqCst);
-                            engine.start(None, now, signals.cycle.load(Ordering::SeqCst))
+                            publish_phase(&signals, engine.snapshot.phase);
+                            engine.start(now)
                         };
                         publish_phase(&signals, engine.snapshot.phase);
                         let _ = reply.send(result.map(|_| engine.snapshot.clone()));
@@ -115,13 +110,6 @@ impl Runtime {
                             settings.save(&path)
                         };
                         if result.is_ok() {
-                            if settings.shortcut != engine.snapshot.settings.shortcut
-                                || engine.snapshot.shortcut_error.is_some()
-                            {
-                                engine.snapshot.shortcut_error =
-                                    shortcut::register(&app, &settings.shortcut, signals.clone())
-                                        .err();
-                            }
                             engine.snapshot.settings = settings;
                             engine.snapshot.sequence += 1;
                         }
@@ -142,21 +130,7 @@ impl Runtime {
                     Ok(Message::TextFlush(reply)) => {
                         let _ = reply.send(archive.flush());
                     }
-                    Ok(Message::Shortcut { cycle, key }) => {
-                        if !updating && hook_error.is_none() {
-                            let was_busy = engine.busy();
-                            if !was_busy {
-                                signals.stop.store(false, Ordering::SeqCst);
-                            }
-                            if let Err(error) = engine.start(Some(key), now, cycle) {
-                                engine.snapshot.message = error;
-                                engine.snapshot.sequence += 1;
-                            }
-                        }
-                    }
-                    Ok(Message::Hook(HookEvent::Key { vk, down, cycle })) => {
-                        engine.key(vk, down, cycle)
-                    }
+                    Ok(Message::Hook(HookEvent::Key { vk, down })) => engine.key(vk, down),
                     Ok(Message::Hook(HookEvent::MouseDown { click })) => {
                         let was_busy = engine.busy();
                         engine.mouse_down();
@@ -177,11 +151,7 @@ impl Runtime {
                             if let Ok(hooks) = &mut hooks {
                                 hooks.stop();
                             }
-                            let result = app
-                                .global_shortcut()
-                                .unregister_all()
-                                .map_err(|_| "快捷键释放失败。".to_string());
-                            let _ = reply.send(result.map(|_| engine.snapshot.clone()));
+                            let _ = reply.send(Ok(engine.snapshot.clone()));
                         }
                     }
                     Ok(Message::ResumeUpdate(reply)) => {
@@ -191,12 +161,6 @@ impl Runtime {
                             signals.mouse_buttons.store(0, Ordering::SeqCst);
                             hooks = start_hooks(signals.clone(), hook_sender.clone());
                             hook_error = hooks.as_ref().err().cloned();
-                            engine.snapshot.shortcut_error = shortcut::register(
-                                &app,
-                                &engine.snapshot.settings.shortcut,
-                                signals.clone(),
-                            )
-                            .err();
                             updating = false;
                             engine.resume_update();
                             engine.snapshot.sequence += 1;
@@ -219,7 +183,6 @@ impl Runtime {
                             if let Ok(hooks) = &mut hooks {
                                 hooks.stop();
                             }
-                            let _ = app.global_shortcut().unregister_all();
                             let _ = reply.send(Ok(engine.snapshot.clone()));
                             break;
                         }
@@ -236,10 +199,10 @@ impl Runtime {
                     }
                 }
                 if signals.stop.load(Ordering::SeqCst) && engine.busy() {
-                    engine.interrupt(signals.cycle.load(Ordering::SeqCst));
+                    engine.interrupt();
                 }
                 publish_phase(&signals, engine.snapshot.phase);
-                if engine.needs_target_click(now, input::any_held(engine.startup_key))
+                if engine.needs_target_click(now, input::any_held())
                     && !signals.stop.load(Ordering::SeqCst)
                 {
                     let result = target
@@ -247,7 +210,7 @@ impl Runtime {
                         .ok_or_else(|| "请重新选择输入位置。".to_string())
                         .and_then(|recorded| recorded.click(&signals.stop));
                     if signals.stop.load(Ordering::SeqCst) {
-                        engine.interrupt(signals.cycle.load(Ordering::SeqCst));
+                        engine.interrupt();
                     } else if let Err(error) = result {
                         engine.target_failed(error);
                     } else {
@@ -257,11 +220,7 @@ impl Runtime {
                 // The hook's atomic latch is checked again immediately before submission.
                 if engine.busy() && !signals.stop.load(Ordering::SeqCst) {
                     let before = engine.snapshot.phase;
-                    let unit = engine.due(
-                        now,
-                        input::own_foreground(),
-                        input::any_held(engine.startup_key),
-                    );
+                    let unit = engine.due(now, input::own_foreground(), input::any_held());
                     publish_phase(&signals, engine.snapshot.phase);
                     if let Some(unit) = unit {
                         let target_error = if before == Phase::Targeting {
@@ -274,17 +233,17 @@ impl Runtime {
                             None
                         };
                         if signals.stop.load(Ordering::SeqCst) {
-                            engine.interrupt(signals.cycle.load(Ordering::SeqCst));
+                            engine.interrupt();
                         } else if let Some(error) = target_error {
                             engine.target_failed(error);
-                        } else if before == Phase::Typing || !input::any_held(engine.startup_key) {
+                        } else if before == Phase::Typing || !input::any_held() {
                             if let Some(text) = engine.take_history_text() {
                                 archive.record(text);
                             }
                             engine
                                 .submitted(origin.elapsed().as_millis() as u64, input::send(unit));
                         } else {
-                            engine.cancel("已取消，开始时仍有修饰键、启动快捷键或鼠标按钮按下");
+                            engine.cancel("已取消，开始时仍有修饰键或鼠标按钮按下");
                         }
                     }
                 }
@@ -430,7 +389,7 @@ pub async fn start_task(runtime: State<'_, Runtime>, draft: Draft) -> Result<Sna
 pub async fn cancel_task(runtime: State<'_, Runtime>) -> Result<Snapshot, String> {
     request(runtime.sender.clone(), Message::Cancel).await
 }
-/// Validate, persist and register settings, preserving button access on shortcut failure.
+/// Validate and persist the character interval without changing the active task.
 #[tauri::command]
 pub async fn save_settings(
     runtime: State<'_, Runtime>,
@@ -477,7 +436,7 @@ mod tests {
             publish_phase(&signals, phase);
             signals.stop.store(true, Ordering::SeqCst);
 
-            engine.key(27, true, 1);
+            engine.key(27, true);
             publish_phase(&signals, engine.snapshot.phase);
             assert_eq!(engine.snapshot.phase, Phase::Stopped);
             assert!(

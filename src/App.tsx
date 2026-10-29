@@ -141,7 +141,7 @@ export default function App() {
       </nav>
       <InputPanel hidden={tab !== 'input'} busy={editingDisabled} sourceRef={sourceRef} onInput={relay.updateText} />
       <HistoryPanel hidden={tab !== 'history'} busy={historyDisabled} archive={relay.archive} onRestore={restoreHistory} onChange={relay.changeArchive} />
-      <SettingsPanel hidden={tab !== 'settings'} busy={busy || relay.pending || !relay.ready} settings={relay.settings} shortcutError={relay.snapshot.shortcutError} onChange={relay.updateSettings}>
+      <SettingsPanel hidden={tab !== 'settings'} busy={busy || relay.pending || !relay.ready} settings={relay.settings} onChange={relay.updateSettings}>
         <TextSettings archive={relay.archive} busy={historyDisabled} onChange={relay.changeArchive} />
       </SettingsPanel>
       <AboutPanel hidden={tab !== 'about'} updates={updates} beforeInstall={relay.flushSettings} restoreDraft={relay.archive.restoreDraft} />

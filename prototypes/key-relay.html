@@ -77,7 +77,7 @@
     #settings-panel { grid-row: 2 / 4; overflow: auto; }
     .footer-actions { display: flex; flex: 0 0 auto; align-items: center; gap: 8px; }
     textarea { display: block; width: 100%; border: 1px solid var(--control-line); border-radius: 0; background: var(--paper); padding: 9px 10px; line-height: 1.8; resize: none; }
-    #source:focus-visible, #shortcut:focus-visible { outline-offset: -2px; }
+    #source:focus-visible { outline-offset: -2px; }
     textarea::placeholder { color: var(--placeholder); }
     #source { flex: 1; min-height: 0; }
     textarea[readonly] { background: #fafafa; }
@@ -200,10 +200,6 @@
             <p class="setting-error" id="delay-error" role="alert" hidden>请输入 1～60 秒的整数。</p>
           </div>
           <div class="setting-row">
-            <div class="setting-copy"><label for="shortcut">快捷键</label><p id="shortcut-note">选定输入位置，松开组合键后开始</p></div>
-            <select id="shortcut" aria-describedby="shortcut-note"><option value="F8">Ctrl + Alt + F8</option><option value="F9">Ctrl + Alt + F9</option><option value="F10">Ctrl + Alt + F10</option></select>
-          </div>
-          <div class="setting-row">
             <div class="setting-copy"><label for="interval">字符间隔</label><p id="interval-note">10～1,000 毫秒，数值越大输入越慢</p></div>
             <div class="setting-value"><input type="number" id="interval" min="10" max="1000" step="1" value="50" aria-describedby="interval-note interval-unit interval-error" required><span id="interval-unit">毫秒</span></div>
             <p class="setting-error" id="interval-error" role="alert" hidden>请输入 10～1,000 毫秒的整数。</p>
@@ -283,7 +279,7 @@ SOFTWARE.
       <div class="preview-heading"><label for="target">测试输入框</label><button class="button" id="clear-target">清空结果</button></div>
       <textarea id="target" placeholder="点击开始后，在倒计时结束前点击这里。" spellcheck="false"></textarea>
       <label for="update-demo">更新演示</label><select id="update-demo"><option value="installed">安装版：发现新版本</option><option value="portable">独立 EXE：手动替换</option><option value="current">已是最新版本</option><option value="error">检查失败</option><option value="signature">签名验证失败</option><option value="install-error">安装启动失败</option></select>
-      <p class="preview-note">此区域用于演示交互，桌面软件界面为上方窗口。原型只向本页测试框写入文本，快捷键在本页生效；Enter、Tab 显示为文本。图钉仅演示选中状态，窗口按钮仅改变页面内展示；标题双击切换展示宽高，系统窗口拖动在桌面版本中验证。最小化或关闭后可通过上方按钮恢复演示。版本为静态示例，链接由浏览器及默认邮件应用处理。更新演示使用固定数据；确认安装模拟重启并清除编辑文本。</p></p>
+      <p class="preview-note">此区域用于演示交互，桌面软件界面为上方窗口。原型通过按钮倒计时向本页测试框写入文本；Enter、Tab 显示为文本。桌面版的系统按键状态检查在 Windows 环境验证。图钉仅演示选中状态，窗口按钮仅改变页面内展示；标题双击切换展示宽高，系统窗口拖动在桌面版本中验证。最小化或关闭后可通过上方按钮恢复演示。版本为静态示例，链接由浏览器及默认邮件应用处理。更新演示使用固定数据；确认安装模拟重启并清除编辑文本。</p></p>
     </details>
   </main>
   <script>
@@ -292,7 +288,6 @@ SOFTWARE.
       const target = document.querySelector('#target');
       const delay = document.querySelector('#delay');
       const interval = document.querySelector('#interval');
-      const shortcut = document.querySelector('#shortcut');
       const start = document.querySelector('#start');
       const trimTrailing = document.querySelector('#trim-trailing');
       const message = document.querySelector('#status-message');
@@ -301,7 +296,6 @@ SOFTWARE.
       const appWindow = document.querySelector('.window');
       const stage = document.querySelector('.stage');
       const restoreWindow = document.querySelector('#restore-window');
-      const heldKeys = new Set();
       let state = 'idle';
       let timer;
       let characters = [];
@@ -310,11 +304,8 @@ SOFTWARE.
       let pointerHeld = false;
       let interactionBlocked = false;
       let suppressedClickTarget = null;
-      let interruptedKeys = false;
       let lastProgressTime = 0;
-      const busy = () => ['countdown', 'arming', 'typing'].includes(state);
-      const isModifier = code => /^(Control|Alt|Shift|Meta)(Left|Right)$/.test(code);
-      const heldForStart = () => [...heldKeys].some(code => isModifier(code) || (state === 'arming' && code === shortcut.value));
+      const busy = () => ['countdown', 'typing'].includes(state);
       let updateState = 'idle';
       let updateTimer;
       const updateDemo = document.querySelector('#update-demo');
@@ -379,14 +370,13 @@ SOFTWARE.
         source.readOnly = blocked;
         trimTrailing.disabled = blocked || !source.value.length;
         document.querySelector('#clear').disabled = blocked || !source.value.length;
-        for (const control of [delay, interval, shortcut, document.querySelector('#restore'), pin, tabs[2]]) control.disabled = blocked;
-        start.disabled = interactionBlocked || state === 'typing' || state === 'arming';
+        for (const control of [delay, interval, document.querySelector('#restore'), pin, tabs[2]]) control.disabled = blocked;
+        start.disabled = interactionBlocked || state === 'typing';
         tabs[1].disabled = state === 'countdown';
       }
 
       function finish(heading, description, next = 'stopped') {
         clearTimeout(timer);
-        if (next === 'stopped' && heldKeys.size) interruptedKeys = true;
         setStatus(next, heading, description);
       }
 
@@ -446,8 +436,8 @@ SOFTWARE.
           finish('已取消', '开始前请先点击下方测试输入框');
           return;
         }
-        if (heldForStart() || pointerHeld) {
-          finish('已取消', '开始时仍有修饰键、启动快捷键或鼠标按钮按下');
+        if (pointerHeld) {
+          finish('已取消', '开始时仍有鼠标按钮按下');
           return;
         }
         setStatus('typing', '正在输入', '按 Esc 或点击鼠标停止');
@@ -473,7 +463,7 @@ SOFTWARE.
       document.addEventListener('pointerdown', event => {
         pointerHeld = true;
         suppressedClickTarget = null;
-        if (state === 'typing' || state === 'arming') {
+        if (state === 'typing') {
           // Suppress activation when this pointer sequence began on a disabled control.
           suppressedClickTarget = event.target.closest(':disabled');
           interactionBlocked = true;
@@ -492,37 +482,14 @@ SOFTWARE.
 
       document.addEventListener('keydown', event => {
         if (appWindow.hidden || appWindow.classList.contains('minimized')) return;
-        if (isModifier(event.code) || event.code === shortcut.value) heldKeys.add(event.code);
-        const isShortcut = event.ctrlKey && event.altKey && !event.shiftKey && !event.metaKey && event.code === shortcut.value;
-        if (interruptedKeys) {
-          if (isShortcut) event.preventDefault();
-          return;
+        if (busy() && event.key === 'Escape') {
+          if (state === 'countdown') {
+            event.preventDefault();
+            finish('已取消', '倒计时已取消，尚未发送文本');
+          } else finish('已中止', `已发送 ${sent} 个字符，剩余内容已取消`);
         }
-        if (busy()) {
-          if (event.key === 'Escape' || (isShortcut && !event.repeat)) {
-            if (isShortcut || state === 'countdown') event.preventDefault();
-            if (state === 'countdown') finish('已取消', '倒计时已取消，尚未发送文本');
-            else finish('已中止', `已发送 ${sent} 个字符，剩余内容已取消`);
-          }
-          return;
-        }
-        if (isShortcut && !event.repeat) {
-          event.preventDefault();
-          if (document.activeElement !== target) {
-            setStatus('error', '请先选择输入位置', '本页演示请先点击下方测试输入框');
-            return;
-          }
-          if (prepare()) setStatus('arming', '等待按键释放', '松开快捷键后开始输入');
-        }
-      }, true);
-      document.addEventListener('keyup', event => {
-        heldKeys.delete(event.code);
-        if (!heldKeys.size) interruptedKeys = false;
-        if (state === 'arming' && !heldForStart()) beginTyping();
       }, true);
       window.addEventListener('blur', () => {
-        heldKeys.clear();
-        interruptedKeys = false;
         pointerHeld = false;
         interactionBlocked = false;
         suppressedClickTarget = null;
@@ -650,7 +617,6 @@ SOFTWARE.
       document.querySelector('#restore').addEventListener('click', () => {
         delay.value = '5';
         interval.value = '50';
-        shortcut.value = 'F8';
         for (const control of [delay, interval]) validateSetting(control);
         setStatus('idle');
       });

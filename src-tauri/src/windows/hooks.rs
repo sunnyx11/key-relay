@@ -1,9 +1,6 @@
-use std::{
-    collections::HashSet,
-    sync::{
-        atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicU8, Ordering},
-        Arc,
-    },
+use std::sync::{
+    atomic::{AtomicBool, AtomicU8, Ordering},
+    Arc,
 };
 
 /// Shared callback flags. The stop latch closes the queue-to-send race.
@@ -11,21 +8,18 @@ use std::{
 pub struct Signals {
     pub phase: AtomicU8,
     pub stop: AtomicBool,
-    pub cycle: AtomicU64,
-    pub shortcut_key: AtomicU32,
     pub mouse_buttons: AtomicU8,
 }
 
 /// Hook events carry only keys needed for state decisions, never typed text.
 #[derive(Clone, Copy, Debug)]
 pub enum HookEvent {
-    Key { vk: u32, down: bool, cycle: u64 },
+    Key { vk: u32, down: bool },
     MouseDown { click: Option<super::target::Click> },
     MouseUp,
 }
 
 struct Tracker {
-    held: HashSet<u32>,
     signals: Arc<Signals>,
 }
 impl Tracker {
@@ -43,32 +37,14 @@ impl Tracker {
                 .fetch_and(!button, Ordering::SeqCst);
         }
     }
-    fn key(&mut self, vk: u32, down: bool, injected: bool, marker: usize) -> Option<HookEvent> {
-        if injected && marker == super::input::INPUT_MARKER {
+    fn key(&self, vk: u32, down: bool, injected: bool, marker: usize) -> Option<HookEvent> {
+        if vk != 27 || !down || (injected && marker == super::input::INPUT_MARKER) {
             return None;
         }
-        let cycle_key =
-            super::input::is_modifier(vk) || vk == self.signals.shortcut_key.load(Ordering::SeqCst);
-        if cycle_key || self.held.contains(&vk) {
-            if down {
-                if self.held.is_empty() {
-                    self.signals.cycle.fetch_add(1, Ordering::SeqCst);
-                }
-                self.held.insert(vk);
-            } else {
-                self.held.remove(&vk);
-            }
-        } else if vk != 27 {
-            return None;
-        }
-        if down && vk == 27 && matches!(self.signals.phase.load(Ordering::SeqCst), 2..=3) {
+        if matches!(self.signals.phase.load(Ordering::SeqCst), 2..=3) {
             self.signals.stop.store(true, Ordering::SeqCst);
         }
-        Some(HookEvent::Key {
-            vk,
-            down,
-            cycle: self.signals.cycle.load(Ordering::SeqCst),
-        })
+        Some(HookEvent::Key { vk, down })
     }
 }
 
@@ -91,7 +67,7 @@ unsafe extern "system" fn keyboard(code: i32, wparam: WPARAM, lparam: LPARAM) ->
         let event = &*(lparam.0 as *const KBDLLHOOKSTRUCT);
         let down = matches!(wparam.0 as u32, WM_KEYDOWN | WM_SYSKEYDOWN);
         CONTEXT.with(|context| {
-            if let Some((tracker, sink)) = context.borrow_mut().as_mut() {
+            if let Some((tracker, sink)) = context.borrow().as_ref() {
                 if let Some(event) = tracker.key(
                     event.vkCode,
                     down,
@@ -169,13 +145,7 @@ impl Hooks {
             let mut msg = MSG::default();
             let _ = PeekMessageW(&mut msg, None, 0, 0, PM_NOREMOVE);
             CONTEXT.with(|context| {
-                *context.borrow_mut() = Some((
-                    Tracker {
-                        held: HashSet::new(),
-                        signals,
-                    },
-                    Box::new(sink),
-                ))
+                *context.borrow_mut() = Some((Tracker { signals }, Box::new(sink)))
             });
             let module = GetModuleHandleW(None).ok().map(Into::into);
             let keyboard_hook = match SetWindowsHookExW(WH_KEYBOARD_LL, Some(keyboard), module, 0) {
@@ -238,125 +208,50 @@ mod tests {
         let signals = Arc::new(Signals::default());
         signals.phase.store(3, Ordering::SeqCst);
         let tracker = Tracker {
-            held: HashSet::new(),
             signals: signals.clone(),
         };
         tracker.mouse(1, true);
+        tracker.mouse(2, true);
         assert!(signals.stop.load(Ordering::SeqCst));
-        assert_ne!(signals.mouse_buttons.load(Ordering::SeqCst), 0);
+        assert_eq!(signals.mouse_buttons.load(Ordering::SeqCst), 3);
         signals.phase.store(0, Ordering::SeqCst);
         tracker.mouse(1, false);
+        assert_eq!(signals.mouse_buttons.load(Ordering::SeqCst), 2);
+        tracker.mouse(2, false);
         assert_eq!(signals.mouse_buttons.load(Ordering::SeqCst), 0);
     }
     #[test]
-    fn only_external_escape_interrupts_every_active_phase() {
+    fn only_external_escape_presses_interrupt_every_active_phase() {
         for phase in [2, 3] {
             let signals = Arc::new(Signals::default());
             signals.phase.store(phase, Ordering::SeqCst);
-            let mut tracker = Tracker {
-                held: HashSet::new(),
+            let tracker = Tracker {
                 signals: signals.clone(),
             };
             assert!(tracker.key(27, true, true, INPUT_MARKER).is_none());
-            for vk in [65, 0x25, 0x85, 0xA2] {
-                tracker.key(vk, true, false, 0);
-                tracker.key(vk, true, false, 0);
-                tracker.key(vk, false, false, 0);
-                tracker.key(vk, true, true, 42);
-                tracker.key(vk, false, true, 42);
+            assert!(tracker.key(27, false, false, 0).is_none());
+            for vk in [65, 0x25, 0x85, 0xA2, 0xA4, 0x77, 0x78, 0x79] {
+                for (down, injected, marker) in
+                    [(true, false, 0), (false, false, 0), (true, true, 42)]
+                {
+                    assert!(tracker.key(vk, down, injected, marker).is_none());
+                }
                 assert!(
                     !signals.stop.load(Ordering::SeqCst),
                     "phase={phase}, key {vk:#x}"
                 );
             }
-            tracker.key(27, false, false, 0);
-            assert!(!signals.stop.load(Ordering::SeqCst));
             assert!(tracker.key(27, true, true, 42).is_some());
             assert!(signals.stop.load(Ordering::SeqCst));
         }
     }
     #[test]
-    fn unrelated_held_keys_allow_independent_shortcut_cycles() {
-        for vk in [65, 0x85, 120] {
-            let signals = Arc::new(Signals::default());
-            signals.shortcut_key.store(119, Ordering::SeqCst);
-            let mut tracker = Tracker {
-                held: HashSet::new(),
-                signals: signals.clone(),
-            };
-            tracker.key(vk, true, false, 0);
-            tracker.key(162, true, false, 0);
-            tracker.key(164, true, false, 0);
-            tracker.key(119, true, false, 0);
-            let first = signals.cycle.load(Ordering::SeqCst);
-            tracker.key(119, false, false, 0);
-            tracker.key(164, false, false, 0);
-            tracker.key(162, false, false, 0);
-            tracker.key(162, true, false, 0);
-            tracker.key(164, true, false, 0);
-            tracker.key(119, true, false, 0);
-            assert_eq!(
-                signals.cycle.load(Ordering::SeqCst),
-                first + 1,
-                "key {vk:#x}"
-            );
-        }
-    }
-    #[test]
-    fn changing_shortcut_releases_the_previous_function_key() {
+    fn idle_escape_preserves_the_stop_latch() {
         let signals = Arc::new(Signals::default());
-        signals.shortcut_key.store(119, Ordering::SeqCst);
-        let mut tracker = Tracker {
-            held: HashSet::new(),
+        let tracker = Tracker {
             signals: signals.clone(),
         };
-        tracker.key(162, true, false, 0);
-        tracker.key(164, true, false, 0);
-        tracker.key(119, true, false, 0);
-        tracker.key(162, false, false, 0);
-        tracker.key(164, false, false, 0);
-        signals.shortcut_key.store(120, Ordering::SeqCst);
-        tracker.key(119, false, false, 0);
-        tracker.key(162, true, false, 0);
-        tracker.key(164, true, false, 0);
-        tracker.key(120, true, false, 0);
-        assert_eq!(signals.cycle.load(Ordering::SeqCst), 2);
-    }
-    #[test]
-    fn key_cycle_changes_only_after_full_release() {
-        for key in [119, 120, 121] {
-            let signals = Arc::new(Signals::default());
-            signals.shortcut_key.store(key, Ordering::SeqCst);
-            let mut tracker = Tracker {
-                held: HashSet::new(),
-                signals: signals.clone(),
-            };
-            tracker.key(162, true, false, 0);
-            tracker.key(164, true, false, 0);
-            tracker.key(key, true, false, 0);
-            assert_eq!(signals.cycle.load(Ordering::SeqCst), 1);
-            tracker.key(162, false, false, 0);
-            tracker.key(164, false, false, 0);
-            tracker.key(162, true, false, 0);
-            assert_eq!(signals.cycle.load(Ordering::SeqCst), 1);
-            tracker.key(162, false, false, 0);
-            tracker.key(key, false, false, 0);
-            tracker.key(162, true, false, 0);
-            assert_eq!(signals.cycle.load(Ordering::SeqCst), 2);
-        }
-    }
-    #[test]
-    fn targeting_only_escape_key_interrupts_and_release_does_not() {
-        let signals = Arc::new(Signals::default());
-        signals.phase.store(2, Ordering::SeqCst);
-        let mut tracker = Tracker {
-            held: HashSet::new(),
-            signals: signals.clone(),
-        };
-        tracker.key(65, true, false, 0);
-        tracker.key(65, false, false, 0);
+        assert!(tracker.key(27, true, false, 0).is_some());
         assert!(!signals.stop.load(Ordering::SeqCst));
-        tracker.key(27, true, false, 0);
-        assert!(signals.stop.load(Ordering::SeqCst));
     }
 }

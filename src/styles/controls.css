@@ -13,7 +13,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .tool-button:is(:hover, :focus-visible):enabled::after { opacity: 1; visibility: visible; }
 #clear:hover:enabled { color: var(--error); background: #f9eae8; border-color: var(--error); }
 .text-control { border: 1px solid var(--control-line); background: var(--paper); }
-.text-control:focus-visible, #shortcut:focus-visible { outline-offset: -2px; }
+.text-control:focus-visible { outline-offset: -2px; }
 textarea { display: block; width: 100%; padding: 9px 10px; line-height: 1.8; resize: none; }
 textarea::placeholder { color: var(--placeholder); }
 textarea[readonly] { background: var(--control-surface); }

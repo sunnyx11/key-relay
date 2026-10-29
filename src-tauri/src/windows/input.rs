@@ -54,17 +54,11 @@ const MODIFIER_KEYS: [u32; 11] = [
     0x10, 0x11, 0x12, 0x5B, 0x5C, 0xA0, 0xA1, 0xA2, 0xA3, 0xA4, 0xA5,
 ];
 
-/// Identify Ctrl, Alt, Shift and Win, including left/right modifier variants.
-pub fn is_modifier(vk: u32) -> bool {
-    MODIFIER_KEYS.contains(&vk)
-}
-
-/// Check modifiers and mouse buttons; shortcut starts also check their selected function key.
-pub fn any_held(shortcut_key: Option<u32>) -> bool {
+/// Query the current system state of modifiers and mouse buttons before starting input.
+pub fn any_held() -> bool {
     [1, 2, 4, 5, 6]
         .into_iter()
         .chain(MODIFIER_KEYS)
-        .chain(shortcut_key)
         .any(|vk| unsafe { GetAsyncKeyState(vk as i32) < 0 })
 }
 

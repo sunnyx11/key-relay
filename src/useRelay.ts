@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { archiveBridge, bridge, defaults, type Draft, type DraftSettings, type Settings, type Snapshot, type TextAction, type TextState } from './bridge';
 
-const initial: Snapshot = { sequence: 0, phase: 'idle', sent: 0, total: 0, target: null, message: '', settings: defaults, shortcutError: null };
+const initial: Snapshot = { sequence: 0, phase: 'idle', sent: 0, total: 0, target: null, message: '', settings: defaults };
 
 /** Own editor synchronization and subscription lifetime; Rust owns task execution. */
 export function useRelay() {

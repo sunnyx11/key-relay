@@ -11,7 +11,7 @@ async function openApp(page: Page, saved?: Partial<TextState>) {
     const listeners = new Map<number, string>();
     let next = 1;
     let pinned = false;
-    const state: Snapshot = { sequence: 1, phase: 'idle', sent: 0, total: 0, target: { x: -900, y: 240, title: '记事本' }, message: '', settings: { intervalMs: 50, shortcut: 'F8' }, shortcutError: null };
+    const state: Snapshot = { sequence: 1, phase: 'idle', sent: 0, total: 0, target: { x: -900, y: 240, title: '记事本' }, message: '', settings: { intervalMs: 50 } };
     const update: UpdateSnapshot = { sequence: 1, phase: 'idle', installed: true, autoCheck: true, version: null, notes: '', downloaded: 0, total: null, message: '' };
     const text: TextState = { sequence: 1, draft: '', entries: [], restoreDraft: true, saveHistory: true, maxHistoryEntries: 100, error: null, ...JSON.parse(localStorage.getItem('relay-text-test') || JSON.stringify(initialText || {})) };
     window.relayTest = { state, update, text, textPush: patch => {
@@ -889,7 +889,8 @@ test('shared buttons match across panels while other controls retain their color
   await page.locator('.window').screenshot({ path: 'test-results/approved-input.png' });
   await page.locator('#settings-tab').click();
   expect(await appearance('恢复默认')).toEqual(secondary);
-  await expect(page.locator('#shortcut')).toHaveCSS('background-color', 'rgb(250, 250, 250)');
+  await expect(page.getByLabel('快捷键', { exact: true })).toHaveCount(0);
+  await expect(page.getByRole('spinbutton', { name: '字符间隔' })).toHaveValue('50');
   await page.locator('.window').screenshot({ path: 'test-results/approved-settings.png' });
   await page.locator('#about-tab').click();
   expect(await appearance('检查更新')).toEqual(secondary);

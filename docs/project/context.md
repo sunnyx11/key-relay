@@ -6,11 +6,11 @@ key-relay 运行在本地 Windows，将准备好的文本通过模拟键盘输�
 
 ## 系统目标
 
-提供由使用者主动触发的文本输入工具。全局快捷键与开始按钮均激活并回点记录目标，详细规则及验收示例见[领域需求](../domains/text-input/requirements.md)。
+提供由使用者主动触发的文本输入工具。开始按钮激活并回点记录目标，详细规则及验收示例见[领域需求](../domains/text-input/requirements.md)。
 
 ## 主要能力
 
-已识别的业务领域为[文本自动输入](../domains/text-input/overview.md)。首版目标功能包括文本准备、草稿保存与启动恢复、历史全文查看与恢复、两种输入启动方式、顺序发送、人工中止、设置及状态展示。应用按单实例运行，重复启动唤起已有窗口。
+已识别的业务领域为[文本自动输入](../domains/text-input/overview.md)。首版目标功能包括文本准备、草稿保存与启动恢复、历史全文查看与恢复、按钮启动、顺序发送、人工中止、设置及状态展示。应用按单实例运行，重复启动唤起已有窗口。
 
 ## 当前系统状态
 
@@ -32,7 +32,6 @@ Spec 根目录为 `docs/`，导航入口为 `docs/index.md`。需求确认与兼
 | Rust | 文本持久化、输入任务、目标记录与激活、发送间隔、中止判断及资源释放 |
 | Rust `windows` crate | 调用 Windows 原生输入与监听接口 |
 | `tauri-plugin-single-instance` | 启动前检查应用实例，重复启动还原、显示并聚焦已有窗口 |
-| `tauri-plugin-global-shortcut` | 全局快捷键注册与事件处理 |
 | `tauri-plugin-opener` | 关于页链接的系统浏览器与默认邮件应用调用 |
 | `tauri-plugin-updater` | HTTPS 版本检查、下载签名验证及 NSIS 更新安装 |
 | `winreg` | 读取当前用户安装记录并结合 EXE 位置识别安装版 |

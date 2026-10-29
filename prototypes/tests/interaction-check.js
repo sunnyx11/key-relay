@@ -16,6 +16,13 @@ async page => {
     if (!await page.locator('#target').isVisible()) await page.locator('.preview > summary').click();
     await page.locator('#target').click();
   };
+  const startButton = async () => {
+    await page.locator('#input-tab').click();
+    await configure('#delay', '1');
+    await page.locator('#start').click();
+    await target();
+    await waitState('typing');
+  };
   const cases = [
     ['Caption matches the desktop geometry and previews window actions', async () => {
       check((await page.locator('.titlebar').boundingBox()).height === 28, 'Caption height must be 28px');
@@ -80,17 +87,9 @@ async page => {
       check(await page.locator('.pin').isDisabled(), 'Pin enabled during countdown');
       await page.keyboard.press('Escape');
       for (const selector of ['#about-tab', '.pin']) {
-        await page.locator('#about-tab').click();
-        await target();
-        await page.keyboard.down('Control');
-        await page.keyboard.down('Alt');
-        await page.keyboard.down('F8');
+        await startButton();
         check(await page.locator('#input-tab').getAttribute('aria-selected') === 'true', 'Task start must show input');
         check(await page.locator('#target').evaluate(el => el === document.activeElement), 'Task start stole target focus');
-        await page.keyboard.up('F8');
-        await page.keyboard.up('Alt');
-        await page.keyboard.up('Control');
-        await waitState('typing');
         const box = await page.locator(selector).boundingBox();
         await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
         await page.mouse.down();
@@ -136,9 +135,7 @@ async page => {
     ['Interrupting on disabled Clear preserves source', async () => {
       const text = 'abcdefghijklmnopqrstuvwxyz'.repeat(10);
       await page.locator('#source').fill(text);
-      await target();
-      await page.keyboard.press('Control+Alt+F8');
-      await waitState('typing');
+      await startButton();
       check(await page.locator('#clear').isDisabled(), 'Clear must be disabled while typing');
       const box = await page.locator('#clear').boundingBox();
       await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
@@ -166,7 +163,7 @@ async page => {
       await page.locator('#settings-tab').click();
       for (const [id, invalid, valid] of [['delay', '0', '5'], ['interval', '1.5', '50']]) {
         await page.locator('#' + id).fill(invalid);
-        await page.locator('#shortcut').focus();
+        await page.locator('#settings-tab').focus();
         const error = page.locator('#' + id + '-error');
         check(await error.isVisible(), id + ' field error is missing');
         check(await page.locator('#' + id).getAttribute('aria-invalid') === 'true', 'Missing invalid accessibility state');
@@ -200,9 +197,7 @@ async page => {
     }],
     ['Typing reports sent and total characters', async () => {
       await page.locator('#source').fill('abcdef'.repeat(30));
-      await target();
-      await page.keyboard.press('Control+Alt+F8');
-      await waitState('typing');
+      await startButton();
       check(/已发送 \d+ \/ 180/.test(await page.locator('#status-message').textContent()), 'No numeric progress');
       await page.waitForFunction(() => /已发送 ([2-9]|\d{2,}) \/ 180/.test(document.querySelector('#status-message').textContent));
       await page.keyboard.press('x');
@@ -280,97 +275,53 @@ async page => {
       check(await page.locator('#source').inputValue() === text, 'Source changed');
       check(await page.locator('#settings-tab').isEnabled(), 'Settings unavailable after completion');
     }],
-    ['Shortcut waits for full release and stops on Escape or mouse input', async () => {
+    ['Button startup preserves mouse and Escape interruption across repeated tasks', async () => {
       await page.locator('#source').fill('abcdef'.repeat(30));
-      await target();
-      await page.keyboard.down('Control');
-      await page.keyboard.down('Alt');
-      await page.keyboard.down('F8');
-      check(await state() === 'arming', 'Shortcut did not arm');
-      await page.keyboard.up('F8');
-      check(await state() === 'arming', 'Shortcut started before modifiers released');
-      await page.keyboard.up('Alt');
-      await page.keyboard.up('Control');
-      await waitState('typing');
+      await startButton();
       await page.mouse.move(20, 20);
       check(await state() === 'typing', 'Mouse movement interrupted typing');
       await page.mouse.click(20, 20);
       check(await state() === 'stopped', 'Mouse click did not interrupt');
-      await target();
-      await page.keyboard.press('Control+Alt+F8');
-      await waitState('typing');
-      await page.keyboard.press('Control+Alt+F8');
-      check(await state() === 'stopped', 'Repeated shortcut restarted instead of stopping');
-      await page.keyboard.press('Control+Alt+F8');
-      await waitState('typing');
+      await startButton();
       await page.keyboard.press('x');
       check(await state() === 'typing', 'Ordinary key interrupted typing');
       check((await page.locator('#target').inputValue()).includes('x'), 'Ordinary key was consumed');
       await page.keyboard.press('Escape');
       check(await state() === 'stopped', 'Escape did not interrupt');
+      await startButton();
+      await page.keyboard.press('Escape');
     }],
-    ['Unrelated held keys allow shortcut startup, restart and countdown', async () => {
+    ['Function key combinations leave idle and active tasks unchanged', async () => {
       await page.locator('#source').fill('abcdef'.repeat(30));
-      await configure('#delay', '1');
       await target();
-      await page.locator('#target').dispatchEvent('keydown', { key: 'F22', code: 'F22' });
-      await page.keyboard.down('Control');
-      await page.keyboard.down('Alt');
-      await page.keyboard.down('F8');
-      check(await state() === 'arming', 'Shortcut did not arm with F22 held');
-      await page.locator('#target').dispatchEvent('keydown', { key: 'x', code: 'KeyX' });
-      check(await state() === 'arming', 'Ordinary key cancelled arming');
-      await page.keyboard.up('Alt');
-      await page.keyboard.up('Control');
-      check(await state() === 'arming', 'Selected function key must release before sending');
-      await page.keyboard.up('F8');
-      await waitState('typing');
-      await page.keyboard.press('Escape');
-      check(await state() === 'stopped', 'Escape did not stop typing');
-      await page.keyboard.press('Control+Alt+F8');
-      await waitState('typing');
-      await page.keyboard.press('Escape');
-      await page.locator('#start').click();
-      await target();
-      await waitState('typing');
+      for (const key of ['F8', 'F9', 'F10']) {
+        await page.keyboard.press(`Control+Alt+${key}`);
+        check(await state() === 'idle', key + ' started a task');
+      }
+      await startButton();
+      for (const key of ['F8', 'F9', 'F10']) {
+        await page.keyboard.press(`Control+Alt+${key}`);
+        check(await state() === 'typing', key + ' interrupted a task');
+      }
       await page.keyboard.press('Escape');
     }],
-    ['Escape stops arming and modifiers still block countdown startup', async () => {
-      await page.locator('#source').fill('abcdef');
-      await configure('#delay', '1');
-      await target();
-      await page.keyboard.down('Control');
-      await page.keyboard.down('Alt');
-      await page.keyboard.down('F8');
-      await page.keyboard.press('Escape');
-      check(await state() === 'stopped', 'Escape did not cancel arming');
-      await page.keyboard.up('F8');
-      await page.keyboard.up('Alt');
-      await page.keyboard.up('Control');
-      await page.locator('#start').click();
-      await target();
-      await page.keyboard.down('Control');
-      await waitState('stopped');
-      await page.keyboard.up('Control');
-      check(await page.locator('#target').inputValue() === '', 'Held modifier allowed sending');
-    }],
-    ['Changed shortcut and default restoration work', async () => {
+    ['Settings expose interval and preview delay and restore defaults', async () => {
       await page.locator('#source').fill('ABC');
       await page.locator('#settings-tab').click();
+      check(await page.locator('#shortcut').count() === 0, 'Shortcut setting remains visible');
       await page.locator('#delay').fill('8');
       await page.locator('#interval').fill('80');
-      await page.locator('#shortcut').selectOption('F10');
       await page.locator('#input-tab').click();
       check((await page.locator('#status-message').textContent()).includes('8 秒'), 'Delay summary stale');
+      await configure('#delay', '1');
+      await page.locator('#start').click();
       await target();
-      await page.keyboard.press('Control+Alt+F10');
       await waitState('done');
-      check(await page.locator('#target').inputValue() === 'ABC', 'Changed shortcut failed');
+      check(await page.locator('#target').inputValue() === 'ABC', 'Button output differs');
       await page.locator('#settings-tab').click();
       await page.locator('#restore').click();
       check(await page.locator('#delay').inputValue() === '5', 'Delay default');
       check(await page.locator('#interval').inputValue() === '50', 'Interval default');
-      check(await page.locator('#shortcut').inputValue() === 'F8', 'Shortcut default');
     }],
     ['Narrow editor uses the shared panel height', async () => {
       for (const width of [420, 390, 320]) {
@@ -444,21 +395,11 @@ async page => {
         await verify('countdown', '等待输入');
         await page.locator('#start').click();
         await verify('stopped', '已取消');
-        await target();
-        await page.keyboard.down('Control');
-        await page.keyboard.down('Alt');
-        await page.keyboard.down('F8');
-        await verify('arming', '等待按键释放');
-        await page.keyboard.up('F8');
-        await page.keyboard.up('Alt');
-        await page.keyboard.up('Control');
-        await waitState('typing');
+        await startButton();
         await verify('typing', '已发送 1 / 2');
         await waitState('done');
         await verify('done', '已完成');
-        await target();
-        await page.keyboard.press('Control+Alt+F8');
-        await waitState('typing');
+        await startButton();
         await page.keyboard.press('Escape');
         await verify('stopped', '已中止');
         await page.locator('#clear').click();
@@ -522,9 +463,6 @@ async page => {
   try {
     for (const [name, test] of cases) {
       try {
-        await page.keyboard.up('F8');
-        await page.keyboard.up('Alt');
-        await page.keyboard.up('Control');
         await page.reload();
         await page.setViewportSize({ width: 1180, height: 960 });
         await test();

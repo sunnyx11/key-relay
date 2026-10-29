@@ -215,7 +215,7 @@ impl Target {
             thread::sleep(Duration::from_millis(5));
         }
         self.ready()?;
-        if stop.load(Ordering::SeqCst) || super::input::any_held(None) {
+        if stop.load(Ordering::SeqCst) || super::input::any_held() {
             return Err("已取消，开始时仍有修饰键或鼠标按钮按下。".into());
         }
         let events = click_events(self.info.x, self.info.y, self.display.desktop)?;

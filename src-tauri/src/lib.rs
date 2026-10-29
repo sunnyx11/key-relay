@@ -2,7 +2,6 @@
 pub mod archive;
 mod commands;
 pub mod settings;
-mod shortcut;
 pub mod task;
 pub mod text;
 mod updates;
@@ -118,7 +117,6 @@ pub fn run() {
         .plugin(tauri_plugin_single_instance::init(|app, _, _| {
             show_main_window(app);
         }))
-        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
@@ -263,10 +261,7 @@ mod tests {
             .path()
             .join("AppData/Roaming/io.github.key-relay.desktop");
         std::fs::create_dir_all(&legacy).unwrap();
-        let settings = settings::Settings {
-            interval_ms: 999,
-            shortcut: "F10".into(),
-        };
+        let settings = settings::Settings { interval_ms: 999 };
         settings.save(&legacy.join("settings.json")).unwrap();
         let mut text = archive::TextData::default();
         text.update_draft("legacy draft");

@@ -17,7 +17,7 @@ const pinWindow = vi.hoisted(() => ({ isAlwaysOnTop: vi.fn(), setAlwaysOnTop: vi
 const sizingWindow = vi.hoisted(() => ({ setSize: vi.fn(), isMaximized: vi.fn(), show: vi.fn() }));
 vi.mock('@tauri-apps/api/window', () => ({ getCurrentWindow: () => ({ ...pinWindow, ...sizingWindow, minimize: vi.fn(), toggleMaximize: vi.fn(), close: vi.fn(), startDragging: vi.fn() }) }));
 
-const initial: Snapshot = { sequence: 1, phase: 'idle', sent: 0, total: 0, target: { x: -900, y: 240, title: '记事本' }, message: '', settings: defaults, shortcutError: null };
+const initial: Snapshot = { sequence: 1, phase: 'idle', sent: 0, total: 0, target: { x: -900, y: 240, title: '记事本' }, message: '', settings: defaults };
 let notify: (state: Snapshot) => void;
 let updateNotify: (state: UpdateSnapshot) => void;
 let archiveNotify: (state: TextState) => void;
@@ -57,6 +57,13 @@ async function mount() {
   await waitFor(() => expect(screen.getByRole('button', { name: '开始输入' })).toBeEnabled());
 }
 describe('editor and native task integration', () => {
+  it('offers interval settings and button starts without a global shortcut selector', async () => {
+    await mount();
+    fireEvent.click(screen.getByRole('tab', { name: '设置' }));
+    expect(screen.queryByLabelText('快捷键')).not.toBeInTheDocument();
+    expect(screen.getByLabelText(/字符间隔/)).toBeEnabled();
+    expect(screen.getByText('输入期间，鼠标移动和普通按键继续；按 Esc 或点击鼠标停止。')).toBeVisible();
+  });
   it('keeps the full pinned archive notice visible across task progress and clears it after capacity is freed', async () => {
     const entries = Array.from({ length: 3 }, (_, i) => ({ id: i + 1, time: i + 1, text: `saved ${i}`, pinned: true }));
     const saved: TextState = { sequence: 1, draft: '', entries, restoreDraft: true, saveHistory: true, maxHistoryEntries: 3, error: null };
@@ -509,10 +516,5 @@ describe('editor and native task integration', () => {
     expect(pinWindow.setAlwaysOnTop).not.toHaveBeenCalled();
     fireEvent.click(pin);
     await waitFor(() => expect(pinWindow.setAlwaysOnTop).toHaveBeenCalledWith(true));
-  });
-  it('registration failure keeps button start available', async () => {
-    vi.mocked(bridge.snapshot).mockResolvedValue({ ...initial, shortcutError: '快捷键注册失败，请重新选择。' });
-    await mount(); expect(screen.getByText('快捷键注册失败，请重新选择。')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '开始输入' })).toBeEnabled();
   });
 });

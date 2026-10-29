@@ -9,7 +9,6 @@ import config from '../../src-tauri/tauri.conf.json' with { type: 'json' };
 let configDir: string;
 test.beforeAll(() => {
   configDir = mkdtempSync(join(tmpdir(), 'key-relay-desktop-'));
-  if (process.env.KEY_RELAY_TEST_SHORTCUT) writeFileSync(join(configDir, 'settings.json'), JSON.stringify({ intervalMs: 50, shortcut: process.env.KEY_RELAY_TEST_SHORTCUT }));
 });
 test.afterAll(() => { rmSync(configDir, { recursive: true, force: true }); });
 test.beforeEach(() => { rmSync(join(configDir, 'window-state.json'), { force: true }); });
@@ -169,12 +168,12 @@ test(`packaged WebView2 window, pin and cleanup (${session} session)`, async () 
       const runtime = window as unknown as { __TAURI_INTERNALS__: { invoke: (command: string, args?: unknown) => Promise<Record<string, unknown>> } };
       return runtime.__TAURI_INTERNALS__.invoke('get_snapshot');
     });
-    expect(state.phase).toBe('idle'); expect(state.target).toBeNull(); expect(state.shortcutError).toBeNull(); expect(state).not.toHaveProperty('text');
+    expect(state.phase).toBe('idle'); expect(state.target).toBeNull(); expect(state).not.toHaveProperty('shortcutError'); expect(state).not.toHaveProperty('text');
     await expect(page.locator('#start')).toBeDisabled();
     const startError = await page.evaluate(async () => {
       const runtime = window as unknown as { __TAURI_INTERNALS__: { invoke: (command: string, args: unknown) => Promise<unknown> } };
       try {
-        await runtime.__TAURI_INTERNALS__.invoke('start_task', { draft: { revision: Date.now() + 1000, text: '中文 Native IPC', settings: { intervalMs: 50, shortcut: 'F8' } } });
+        await runtime.__TAURI_INTERNALS__.invoke('start_task', { draft: { revision: Date.now() + 1000, text: '中文 Native IPC', settings: { intervalMs: 50 } } });
         return '';
       } catch (error) { return String(error); }
     });

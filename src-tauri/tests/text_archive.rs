@@ -299,7 +299,7 @@ fn a_full_pinned_archive_keeps_sending_and_preserves_saved_history() {
         text: "ab".into(),
         settings: serde_json::to_value(Settings::default()).unwrap(),
     });
-    engine.start(None, 0, 1).unwrap();
+    engine.start(0).unwrap();
     engine.clicked_target(0);
     assert!(engine.due(150, false, false).is_some());
     archive.record(engine.take_history_text().unwrap());
@@ -326,7 +326,7 @@ fn history_uses_frozen_source_once_even_for_one_character_or_interruption() {
             text: text.into(),
             settings: serde_json::to_value(Settings::default()).unwrap(),
         });
-        engine.start(None, 0, 1).unwrap();
+        engine.start(0).unwrap();
         assert!(engine.take_history_text().is_none());
         engine.sync(Draft {
             revision: 2,

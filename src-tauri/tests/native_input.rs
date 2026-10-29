@@ -113,7 +113,7 @@ fn focus_receiver(window: HWND) {
 fn unicode_enter_tab_hooks_and_cleanup() {
     unsafe {
         assert!(
-            !input::any_held(None),
+            !input::any_held(),
             "Release modifier keys and mouse buttons first"
         );
         let previous = GetForegroundWindow();
@@ -162,7 +162,7 @@ fn unicode_enter_tab_hooks_and_cleanup() {
             !signals.stop.load(Ordering::SeqCst),
             "Own marked events must pass without interruption"
         );
-        assert!(!input::any_held(None));
+        assert!(!input::any_held());
         let mut foreign = input::encode(key_relay::text::Unit::Character('!'));
         for event in &mut foreign {
             event.Anonymous.ki.dwExtraInfo = 0;
@@ -303,7 +303,7 @@ fn recorded_target_clicks_external_window_and_rejects_stale_geometry() {
 
 fn verify_recorded_target(position: [i32; 2]) {
     assert!(
-        !input::any_held(None),
+        !input::any_held(),
         "Release modifiers and mouse buttons first"
     );
     let directory = tempfile::tempdir().unwrap();
@@ -373,7 +373,7 @@ fn verify_recorded_target(position: [i32; 2]) {
         let signals = Arc::new(Signals::default());
         signals.phase.store(2, Ordering::SeqCst);
         let mut hooks = Hooks::start(signals.clone(), |_| {}).unwrap();
-        for shortcut in [None, Some(0x77)] {
+        for attempt in 0..2 {
             signals.phase.store(0, Ordering::SeqCst);
             focus_receiver(window);
             signals.stop.store(false, Ordering::SeqCst);
@@ -388,7 +388,7 @@ fn verify_recorded_target(position: [i32; 2]) {
                 .0,
                 0
             );
-            let sample = format!("中文 Ab9!\r\n下一行\t😀{shortcut:?}");
+            let sample = format!("中文 Ab9!\r\n下一行\t😀{attempt}");
             let mut engine = Engine::new(Settings::default());
             engine.record_target(recorded.info.clone());
             engine.sync(Draft {
@@ -398,12 +398,7 @@ fn verify_recorded_target(position: [i32; 2]) {
             });
             assert!(input::own_foreground());
             let origin = Instant::now();
-            engine.start(shortcut, 0, 1).unwrap();
-            if let Some(key) = shortcut {
-                engine.key(key, true, 1);
-                assert!(!engine.needs_target_click(0, false));
-                engine.key(key, false, 1);
-            }
+            engine.start(0).unwrap();
             assert!(engine.needs_target_click(0, false));
             signals.phase.store(2, Ordering::SeqCst);
             recorded.click(&signals.stop).unwrap();
@@ -429,11 +424,7 @@ fn verify_recorded_target(position: [i32; 2]) {
                 assert!(!signals.stop.load(Ordering::SeqCst));
                 let now = origin.elapsed().as_millis() as u64;
                 let before = engine.snapshot.phase;
-                if let Some(unit) = engine.due(
-                    now,
-                    input::own_foreground(),
-                    input::any_held(engine.startup_key),
-                ) {
+                if let Some(unit) = engine.due(now, input::own_foreground(), input::any_held()) {
                     if before == Phase::Targeting {
                         recorded.ready().unwrap();
                     }
@@ -452,7 +443,7 @@ fn verify_recorded_target(position: [i32; 2]) {
             {
                 assert!(
                     Instant::now() < deadline,
-                    "External receiver {shortcut:?}: expected {sample:?}, received {:?}",
+                    "External receiver attempt {attempt}: expected {sample:?}, received {:?}",
                     std::fs::read_to_string(directory.path().join("text.txt"))
                 );
                 thread::sleep(Duration::from_millis(10));
