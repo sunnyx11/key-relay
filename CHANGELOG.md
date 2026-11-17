@@ -4,9 +4,15 @@
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-11-17
+
 ### Added
 
 - 历史记录支持一键复制完整原文到系统剪贴板，保留当前历史页与编辑内容。
+
+### Changed
+
+- 操作按钮组及历史搜索工具栏的相邻控件间距统一为 3px。
 
 ## [0.6.1] - 2026-10-29
 
@@ -131,7 +137,8 @@
 - 提供当前用户安装包，缺少 WebView2 时联网安装运行时。
 - 提供 Windows x64 独立 EXE，使用系统 WebView2。
 
-[Unreleased]: https://github.com/sunnyx11/key-relay/compare/v0.6.1...HEAD
+[Unreleased]: https://github.com/sunnyx11/key-relay/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/sunnyx11/key-relay/releases/tag/v0.7.0
 [0.6.1]: https://github.com/sunnyx11/key-relay/releases/tag/v0.6.1
 [0.6.0]: https://github.com/sunnyx11/key-relay/releases/tag/v0.6.0
 [0.5.1]: https://github.com/sunnyx11/key-relay/releases/tag/v0.5.1
