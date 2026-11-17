@@ -324,14 +324,28 @@ test('history rows and text preferences fit narrow widths and zoom without chang
     expect(await page.locator('.history-meta').first().evaluate(el => el.clientHeight)).toBeLessThanOrEqual(20);
     const button = page.getByRole('button', { name: '清空历史', exact: true });
     expect(await button.evaluate(el => [getComputedStyle(el).height, getComputedStyle(el).borderRadius])).toEqual(['26px', '0px']);
+    await expect(page.locator('.history-toolbar')).toHaveCSS('gap', '3px');
     const clearRight = (await button.boundingBox())!;
     const toolbar = (await page.locator('.history-toolbar').boundingBox())!;
     expect(Math.abs(toolbar.x + toolbar.width - clearRight.x - clearRight.width - 2 * zoom), `${width}px/${zoom}: clear history at toolbar right edge`).toBeLessThanOrEqual(1);
     const deleteButton = page.locator('.history-entry').first().getByRole('button', { name: /^删除记录/ });
+    const copyButton = page.locator('.history-entry').first().getByRole('button', { name: /^复制记录/ });
     const restore = page.locator('.history-entry').first().getByRole('button', { name: /^恢复记录/ });
+    await expect(copyButton).toHaveAttribute('title', '复制记录');
     await expect(restore).toHaveAttribute('title', '恢复记录');
     await expect(deleteButton).toHaveAttribute('title', '删除记录');
-    expect(await page.locator('.history-entry').first().locator('.history-actions > button').evaluateAll(buttons => buttons.map(el => [getComputedStyle(el).width, getComputedStyle(el).height]))).toEqual(Array.from({ length: 3 }, () => ['26px', '26px']));
+    await expect(page.locator('.history-entry').first().locator('.history-actions')).toHaveCSS('gap', '3px');
+    expect(await page.locator('.history-entry').first().locator('.history-actions > button').evaluateAll(buttons => [buttons.map(el => el.getAttribute('title')), buttons.map(el => [getComputedStyle(el).width, getComputedStyle(el).height])])).toEqual([['置顶记录', '复制记录', '恢复记录', '删除记录'], Array.from({ length: 4 }, () => ['26px', '26px'])]);
+    await page.evaluate(() => {
+      const copied: string[] = [];
+      Object.defineProperty(window, '__copiedTexts', { configurable: true, value: copied });
+      Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: async (value: string) => { copied.push(value); } } });
+    });
+    await copyButton.click();
+    expect(await page.evaluate(() => (window as unknown as { __copiedTexts: string[] }).__copiedTexts)).toEqual(['  记录 0\n第二行😀\n第三行']);
+    await expect(copyButton).toHaveAttribute('data-copied', 'true');
+    await expect(page.locator('.history-footer')).toHaveText('已复制历史内容');
+    await expect(page.locator('#history-tab')).toHaveAttribute('aria-selected', 'true');
     await page.locator('.history-entry').first().getByRole('button', { name: /^查看记录/ }).click();
     expect((await page.locator('.window').boundingBox())!.height).toBe(height);
     await expect(page.getByLabel('历史记录全文')).toContainText('第三行');
@@ -394,9 +408,11 @@ test('native task transitions protect history and consume the same stopping clic
   await page.locator('#history-tab').click();
   await expect(page.locator('#history-tab')).toHaveAttribute('aria-selected', 'true');
   await page.evaluate(() => window.relayTest.push({ interactionBlocked: true }));
+  await expect(page.getByRole('button', { name: /^复制记录/ })).toBeDisabled();
   await expect(page.getByRole('button', { name: /^恢复记录/ })).toBeDisabled();
   await expect(page.getByRole('button', { name: /^删除记录/ })).toBeDisabled();
   await page.evaluate(() => window.relayTest.push({ interactionBlocked: false }));
+  await expect(page.getByRole('button', { name: /^复制记录/ })).toBeEnabled();
   await expect(page.getByRole('button', { name: /^恢复记录/ })).toBeEnabled();
 });
 
@@ -627,7 +643,7 @@ test('footer actions remain compact and keyboard accessible across widths and zo
         expect(box.height).toBeCloseTo(26 * zoom, 1);
         expect(box.width).toBeCloseTo([44, 44, 72][index] * zoom, 1);
         expect(box.y).toBe(boxes[0].y);
-        if (index) expect(box.x - boxes[index - 1].right).toBeCloseTo(4 * zoom, 1);
+        if (index) expect(box.x - boxes[index - 1].right).toBeCloseTo(3 * zoom, 1);
       }
       const start = boxes[2];
       await page.locator('#start').click();

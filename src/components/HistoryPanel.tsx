@@ -12,15 +12,47 @@ export function HistoryPanel({ hidden, busy, archive, onRestore, onChange }: {
   const [viewed, setViewed] = useState<HistoryEntry | null>(null);
   const [includePinned, setIncludePinned] = useState(false);
   const [clock, setClock] = useState(Date.now());
+  const [copiedId, setCopiedId] = useState<number | null>(null);
+  const [copyFeedback, setCopyFeedback] = useState<'copied' | 'error' | null>(null);
   const clearButton = useRef<HTMLButtonElement>(null);
   const search = useRef<HTMLInputElement>(null);
   const cancelButton = useRef<HTMLButtonElement>(null);
   const backButton = useRef<HTMLButtonElement>(null);
   const viewButton = useRef<HTMLButtonElement | null>(null);
+  const copyTimer = useRef<number | null>(null);
+  const clearCopyState = () => {
+    if (copyTimer.current !== null) {
+      window.clearTimeout(copyTimer.current);
+      copyTimer.current = null;
+    }
+    setCopiedId(null);
+    setCopyFeedback(null);
+  };
   useEffect(() => { const timer = window.setInterval(() => setClock(Date.now()), 60000); return () => window.clearInterval(timer); }, []);
-  useEffect(() => { if (hidden || busy) { setConfirming(false); setViewed(null); } }, [hidden, busy]);
+  useEffect(() => () => { if (copyTimer.current !== null) window.clearTimeout(copyTimer.current); }, []);
+  useEffect(() => { if (hidden || busy) { setConfirming(false); setViewed(null); clearCopyState(); } }, [hidden, busy]);
   useEffect(() => { if (viewed) backButton.current?.focus(); }, [viewed]);
   useEffect(() => { if (confirming) cancelButton.current?.focus(); }, [confirming]);
+  const handleCopy = async (entry: HistoryEntry) => {
+    if (copyTimer.current !== null) {
+      window.clearTimeout(copyTimer.current);
+      copyTimer.current = null;
+    }
+    try {
+      if (!navigator.clipboard?.writeText) throw new Error('clipboard unavailable');
+      await navigator.clipboard.writeText(entry.text);
+      setCopiedId(entry.id);
+      setCopyFeedback('copied');
+      copyTimer.current = window.setTimeout(() => {
+        copyTimer.current = null;
+        setCopiedId(null);
+        setCopyFeedback(null);
+      }, 2000);
+    } catch {
+      setCopiedId(null);
+      setCopyFeedback('error');
+    }
+  };
   const entries = archive.entries.filter(entry => entry.text.toLocaleLowerCase().includes(query.toLocaleLowerCase()))
     .sort((a, b) => Number(b.pinned) - Number(a.pinned) || b.time - a.time || b.id - a.id);
   const pinnedCount = archive.entries.filter(entry => entry.pinned).length;
@@ -54,20 +86,21 @@ export function HistoryPanel({ hidden, busy, archive, onRestore, onChange }: {
         {[...groups].map(([label, records]) => <section className="history-group" key={label} aria-label={label}>
           <h2>{label}</h2>
           {records.map(({ entry, number }) => <article className="history-entry" key={entry.id} data-entry-id={entry.id}>
-            <button className="history-view" disabled={busy} aria-label={`查看记录：${entry.text.slice(0, 80)}`} onClick={event => { viewButton.current = event.currentTarget; setConfirming(false); setViewed(entry); }}>
+            <button className="history-view" disabled={busy} aria-label={`查看记录：${entry.text.slice(0, 80)}`} onClick={event => { viewButton.current = event.currentTarget; setConfirming(false); clearCopyState(); setViewed(entry); }}>
               <span className="history-preview"><span className="history-number">{number}</span>{' '}{entry.text.replace(/[\r\n]+/g, ' ')}</span>
             </button>
             <span className="history-meta"><time dateTime={new Date(entry.time).toISOString()}>{new Date(entry.time).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false })}</time></span>
             <div className="history-actions">
               <button className="button history-pin" disabled={busy} aria-label={`${entry.pinned ? '取消置顶' : '置顶'}记录：${entry.text.slice(0, 80)}`} title={entry.pinned ? '取消置顶记录' : '置顶记录'} aria-pressed={entry.pinned} onClick={() => { void onChange({ kind: 'pin', id: entry.id, pinned: !entry.pinned }); }}><svg viewBox="0 0 16 16" aria-hidden="true"><g transform={entry.pinned ? undefined : 'rotate(35 8 8)'}><path d="M5 2.5h6M6 2.5v5l-2 3h8l-2-3v-5M8 10.5v3" /></g></svg></button>
+              <button className="button history-copy" disabled={busy} data-copied={copiedId === entry.id ? 'true' : undefined} aria-label={`复制记录：${entry.text.slice(0, 80)}`} title="复制记录" onClick={() => { void handleCopy(entry); }}>{copiedId === entry.id ? <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 8.5 6.5 11.5 12.5 4.5" /></svg> : <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M5.5 5.5h7v7h-7zM3.5 10.5v-7h7" /></svg>}</button>
               <button className="button" disabled={busy} aria-label={`恢复记录：${entry.text.slice(0, 80)}`} title="恢复记录" onClick={() => onRestore(entry)}><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6.5 3.5 3 7l3.5 3.5M3 7h6a3 3 0 0 1 3 3v2.5" /></svg></button>
               <button className="button" disabled={busy} aria-label={`删除记录：${entry.text.slice(0, 80)}`} title="删除记录" onClick={() => { void onChange({ kind: 'delete', id: entry.id }); }}><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 4.5h10M6 4.5v-2h4v2M4.5 4.5l.5 9h6l.5-9M6.5 6.5v5M9.5 6.5v5" /></svg></button>
             </div>
           </article>)}
         </section>)}
       </div>
-      <div className="history-footer" role="status">
-        <span>{query ? `找到 ${entries.length} 条` : `共 ${archive.entries.length} 条记录`} · 点击内容查看全文，点击“恢复”填入输入框</span>
+      <div className="history-footer" role="status" data-error={copyFeedback === 'error' ? 'true' : undefined}>
+        <span>{copyFeedback === 'error' ? '复制失败，请重试' : copyFeedback === 'copied' ? '已复制历史内容' : `${query ? `找到 ${entries.length} 条` : `共 ${archive.entries.length} 条记录`} · 点击内容查看全文，点击“复制”或“恢复”使用内容`}</span>
       </div>
     </div>
   </section>;

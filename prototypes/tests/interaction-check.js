@@ -236,8 +236,8 @@ async page => {
         for (let index = 1; index < positions.length; index += 1) {
           const previous = positions[index - 1];
           const current = positions[index];
-          check(current.x - previous.right >= 4 && current.x - previous.right <= 12, 'Footer actions have an oversized gap at width ' + width);
-          if (index >= 2) check(current.x - previous.right === 4, 'Footer button gaps must be equal at width ' + width);
+          check(current.x - previous.right >= 3 && current.x - previous.right <= 12, 'Footer actions have an oversized gap at width ' + width);
+          if (index >= 2) check(current.x - previous.right === 3, 'Footer button gaps must be equal at width ' + width);
           check(Math.abs(current.centerY - previous.centerY) <= 1, 'Footer actions wrapped onto separate rows at width ' + width);
         }
         check(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'Footer overflow at width ' + width);

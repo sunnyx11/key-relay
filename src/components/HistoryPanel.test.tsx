@@ -1,5 +1,5 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { HistoryPanel } from './HistoryPanel';
 import type { TextState } from '../bridge';
 
@@ -7,6 +7,11 @@ const text = '第一行\n  第二行😀\n\t第三行完整原文';
 const archive: TextState = { sequence: 1, draft: '当前草稿', entries: [{ id: 1, time: Date.now(), text, pinned: false }], restoreDraft: true, saveHistory: true, maxHistoryEntries: 100, error: null };
 
 describe('history viewing and restoration', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
   it('opens read-only full text separately from restoration and returns focus to the filtered row', async () => {
     const onRestore = vi.fn();
     const onChange = vi.fn().mockResolvedValue(true);
@@ -113,7 +118,48 @@ describe('history viewing and restoration', () => {
     rerender(<HistoryPanel {...props} busy />);
     expect(screen.queryByRole('region', { name: '历史全文' })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: /^查看记录/ })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /^复制记录/ })).toBeDisabled();
     expect(screen.getByRole('button', { name: /^恢复记录/ })).toBeDisabled();
     expect(screen.getByRole('button', { name: /^删除记录/ })).toBeDisabled();
+  });
+
+  it('places the copy button second in row actions, copies full original text and shows temporary feedback', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
+    const onRestore = vi.fn();
+    const onChange = vi.fn();
+    const { container } = render(<HistoryPanel hidden={false} busy={false} archive={archive} onRestore={onRestore} onChange={onChange} />);
+    const buttons = [...container.querySelectorAll('.history-actions > button')];
+    expect(buttons.map(el => el.getAttribute('title'))).toEqual(['置顶记录', '复制记录', '恢复记录', '删除记录']);
+    const copyButton = buttons[1] as HTMLButtonElement;
+    expect(copyButton).toHaveAttribute('aria-label', `复制记录：${text}`);
+    expect(screen.getByRole('status')).toHaveTextContent('点击内容查看全文，点击“复制”或“恢复”使用内容');
+
+    vi.useFakeTimers();
+    fireEvent.click(copyButton);
+    await act(async () => { await Promise.resolve(); });
+    expect(writeText).toHaveBeenCalledExactlyOnceWith(text);
+    expect(onRestore).not.toHaveBeenCalled();
+    expect(onChange).not.toHaveBeenCalled();
+    expect(copyButton).toHaveAttribute('data-copied', 'true');
+    expect(screen.getByRole('status')).toHaveTextContent('已复制历史内容');
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(2000); });
+    expect(copyButton).not.toHaveAttribute('data-copied', 'true');
+    expect(screen.getByRole('status')).toHaveTextContent('共 1 条记录 · 点击内容查看全文，点击“复制”或“恢复”使用内容');
+  });
+
+  it('shows an error status when clipboard writing fails and clears feedback on hiding', async () => {
+    const writeText = vi.fn().mockRejectedValue(new Error('denied'));
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
+    const { rerender } = render(<HistoryPanel hidden={false} busy={false} archive={archive} onRestore={vi.fn()} onChange={vi.fn()} />);
+    const copyButton = screen.getByRole('button', { name: /^复制记录/ });
+    fireEvent.click(copyButton);
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('复制失败，请重试'));
+    expect(screen.getByRole('status')).toHaveAttribute('data-error', 'true');
+    expect(copyButton).not.toHaveAttribute('data-copied', 'true');
+    rerender(<HistoryPanel hidden busy={false} archive={archive} onRestore={vi.fn()} onChange={vi.fn()} />);
+    rerender(<HistoryPanel hidden={false} busy={false} archive={archive} onRestore={vi.fn()} onChange={vi.fn()} />);
+    expect(screen.getByRole('status')).not.toHaveAttribute('data-error', 'true');
   });
 });
